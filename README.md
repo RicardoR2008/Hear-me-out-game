@@ -1,0 +1,103 @@
+# Hear Me Out — online
+
+A party game for 2–12 friends, each on their own phone or computer. Everyone secretly picks their most questionable crush, you decorate a cake together, then reveal your picks one by one, put them on the cake, defend yourself, and vote.
+
+Built with React + TypeScript (Vite). Online play runs on Firebase Realtime Database with anonymous sign-in. Without Firebase settings the game runs in **practice mode**: rooms only work between tabs of one browser.
+
+## Run it on your computer
+
+You need [Node.js](https://nodejs.org) 22.12 or newer.
+
+```bash
+npm install
+npm run dev
+```
+
+Open the address it prints (http://localhost:5173). To try a game alone in practice mode, open the same address in a second tab (a new tab, not "Duplicate tab") and join the first tab's room. You can also add `?seat=B` to a tab's address to play as a different person in it.
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Development server with live reload |
+| `npm test` | Plays whole simulated games with 2–12 players and checks the rules |
+| `npm run build` | Type-checks and builds the site into `dist/` |
+| `npm run preview` | Serves the built `dist/` folder locally |
+
+## Part 1 — Firebase (about 10 minutes, free)
+
+1. Go to **console.firebase.google.com** and sign in with a Google account.
+2. Click **Create a project** (or **Add project**). Name it, e.g. `hear-me-out`. Turn Google Analytics **off**. Click **Create project**, then **Continue**.
+3. **Turn on anonymous sign-in**
+   - Left menu: **Build → Authentication → Get started**.
+   - Tab **Sign-in method** → **Anonymous** → switch **Enable** on → **Save**.
+4. **Allow your website**
+   - Still in Authentication: tab **Settings → Authorized domains → Add domain**.
+   - Type your site's domain, e.g. `ricardor2008.github.io` → **Add**. (`localhost` is allowed already.)
+5. **Create the database**
+   - Left menu: **Build → Realtime Database → Create Database**.
+   - Pick the location closest to you → **Next** → **Start in locked mode** → **Enable**.
+   - Open the **Rules** tab. Delete everything there, paste the whole contents of [`firebase/database.rules.json`](firebase/database.rules.json), click **Publish**.
+6. **Get your settings**
+   - Click the gear next to **Project Overview → Project settings**.
+   - Scroll to **Your apps** → click the **`</>`** (Web) icon.
+   - Nickname: `hear-me-out`. Leave "Firebase Hosting" unchecked. Click **Register app**.
+   - You'll see a block that starts with `const firebaseConfig = {`. Copy everything between the `{` and `}`.
+7. Open [`public/hmo-config.js`](public/hmo-config.js) and replace `null` so it looks like:
+   ```js
+   window.HMO_FIREBASE_CONFIG = {
+     apiKey: "AIza…",
+     authDomain: "hear-me-out-xxxx.firebaseapp.com",
+     databaseURL: "https://hear-me-out-xxxx-default-rtdb.firebaseio.com",
+     projectId: "hear-me-out-xxxx",
+     appId: "1:…:web:…"
+   };
+   ```
+   If there's no `databaseURL` line, add it: copy the URL shown at the top of the **Realtime Database → Data** page.
+
+These keys are meant to be public in a web game; the rules from step 5 are what protect the data. `hmo-config.js` is loaded as-is when the page opens (it is not bundled), so you can also edit it in an already-built `dist/` folder.
+
+## Part 2 — Put it online with GitHub Pages
+
+The repo includes a workflow ([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)) that tests, builds and publishes the game every time you push to `main`.
+
+1. Push this project to your GitHub repo (e.g. `RicardoR2008/Hear-me-out-game`).
+2. On GitHub: **Settings → Pages → Source: GitHub Actions**.
+3. Open the **Actions** tab and wait for "Deploy to GitHub Pages" to finish (about a minute). The site is then live at `https://<your-user>.github.io/<repo>/`, e.g. https://ricardor2008.github.io/Hear-me-out-game/.
+4. The join screen should **not** say "Practice mode". If it does, `public/hmo-config.js` still has `null` or a typo.
+
+Prefer not to use Actions? Run `npm run build` and upload the **contents** of `dist/` to any static host.
+
+## How to play
+
+- One person taps **Create a room** and reads out the 4-letter code. Everyone else types it and taps **Join**. 2–12 players.
+- The first person in is the host and starts the game. If the host leaves, the next person who joined becomes host automatically.
+- Pick a theme (everyone suggests, then votes — or type one you already agreed on), decorate the cake together, then secretly pick your hear me out and stick it on the cake.
+- Reveals happen one at a time: the owner shows the picture, then the name, then each line of their defense. Everyone else reacts.
+- Vote for Best and Most unhinged, then save a keepsake page of the finished cake.
+- Refreshing or losing signal is fine: open the link again and you're put back in your seat.
+- Pictures you upload are shrunk before they're sent, so they arrive fast.
+
+Room data, including pictures, can be read by anyone using the game while the room exists. Rooms older than 24 hours are deleted the next time someone opens the game.
+
+## If something goes wrong
+
+- **"Could not sign in"** → Anonymous sign-in isn't enabled (Part 1, step 3), or your site's domain isn't in Authorized domains (step 4).
+- **Stuck on "Joining room…" after Create** → check the database Rules were published (step 5).
+- **"No room with that code"** → the code is wrong, or the room is over 24 hours old.
+- **A player is greyed out** → they lost connection. The game skips waiting for them until they come back.
+
+## How the code is organized
+
+```
+public/hmo-config.js      Firebase settings (loaded at runtime)
+firebase/                 Database security rules
+src/net/                  Database layer: Firebase, practice mode (tabs), in-memory (tests)
+src/game/controller.ts    All game rules and the host's job of moving the room through phases
+src/game/viewModel.ts     Turns game state into exactly what each screen shows
+src/game/geometry.ts      Cake shape and where picks may stand without overlapping
+src/game/keepsake.ts      The downloadable keepsake page
+src/ui/                   React screens; src/ui/cake/ draws the cake (inline styles, copied by the keepsake)
+src/styles.css            Day/night colors, animations and screen styles
+tests/                    Multiplayer simulations (Vitest)
+```
+
+The game logic doesn't depend on React: `GameController` holds local state, mirrors the shared room (`rooms/<CODE>` in the database), and when it belongs to the host, advances phases when everyone is ready. The UI subscribes to it and renders from `buildViewModel()`.

@@ -1,0 +1,35 @@
+{
+  "name": "hear-me-out",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Hear Me Out: an online party game. Everyone secretly picks their most questionable crush, puts them on a cake, and defends themselves.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fontsource/bowlby-one": "^5.3.0",
+    "@fontsource/hanken-grotesk": "^5.3.0",
+    "firebase": "^13.0.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.4"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.14.6"
+  }
+}

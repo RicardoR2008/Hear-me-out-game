@@ -1,0 +1,12 @@
+{
+  "rules": {
+    "rooms": {
+      ".read": "auth != null",
+      ".indexOn": ["meta/createdAt"],
+      "$code": {
+        ".write": "auth != null",
+        ".validate": "$code.matches(/^[A-Z]{4}$/)"
+      }
+    }
+  }
+}
