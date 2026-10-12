@@ -13,7 +13,9 @@ npm install
 npm run dev
 ```
 
-Open the address it prints (http://localhost:5173). To try a game alone in practice mode, open the same address in a second tab (a new tab, not "Duplicate tab") and join the first tab's room. You can also add `?seat=B` to a tab's address to play as a different person in it.
+Open the address it prints (http://localhost:5173). It uses the Firebase settings in `public/hmo-config.js`, so games you start locally are real online rooms. To play both sides yourself, open the second player in a different browser or a private/incognito window: tabs of the same browser are the same player.
+
+With `hmo-config.js` set to `null` the game runs in practice mode instead, where tabs of one browser play against each other (open a new tab, not "Duplicate tab", or add `?seat=B` to a tab's address).
 
 | Command | What it does |
 | --- | --- |
