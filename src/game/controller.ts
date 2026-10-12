@@ -1287,7 +1287,7 @@ export class GameController {
   /** Who may move on to the next pick: its owner, the host, or anyone if the owner left. */
   canNext(v: View = this.view()) {
     const id = v.order[v.idx];
-    return !!id && (id === 'me' || v.isHost || !(v.players.find((p) => p.id === id) || { online: true }).online);
+    return !!id && (id === 'me' || v.isHost || !(v.players.find((p) => p.id === id) || { online: false }).online);
   }
   nextReveal() {
     const v = this.view();

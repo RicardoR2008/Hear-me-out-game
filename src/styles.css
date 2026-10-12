@@ -205,7 +205,7 @@ p {
 .grow { flex: 1; }
 .nowrap { white-space: nowrap; }
 .center { text-align: center; }
-.pretty { text-wrap: pretty; }
+.pretty { display: block; text-wrap: pretty; }
 .row-8 { display: flex; gap: 8px; }
 .row-8.stretch { align-items: stretch; }
 .row-10 { display: flex; gap: 10px; }
