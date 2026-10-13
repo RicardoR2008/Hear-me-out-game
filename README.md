@@ -70,7 +70,9 @@ Prefer not to use Actions? Run `npm run build` and upload the **contents** of `d
 
 ## How to play
 
-- One person taps **Create a room** and reads out the 4-letter code (or taps **Copy invite link** and sends it: the link opens the game with the code filled in). Everyone else types it and taps **Join**. 2–12 players.
+A printable guide with a picture of every step: [Hear Me Out - How to Play V3.pdf](docs/Hear%20Me%20Out%20-%20How%20to%20Play%20V3.pdf).
+
+- One person taps **Create a room** and reads out the 4-letter code (or taps **Copy invite link**, which says **Share invite link** on phones, and sends it: the link opens the game with the code filled in). Everyone else types it and taps **Join**. 2–12 players.
 - The first person in is the host and starts the game. The top of the lobby says in big letters whether you are the host or a player, and the host has a crown 👑 on their picture at the top of every screen. If the host leaves, the next person who joined becomes host automatically. The same happens mid-game if the host's screen stops answering for about 8 seconds (phone locked, app switched), so nobody is left waiting.
 - Pick a theme (everyone suggests, then votes — or type one you already agreed on), decorate the cake together, then secretly pick your hear me out and stick it on the cake.
 - When your pick is set, tap **Lock it in**, then **I am ready for the reveal**. Nobody can start the reveal alone: once everyone still in the room is ready, the curtains close for a 3-second countdown. Tap **Not yet** (or **Undo lock-in**) to take your OK back.
