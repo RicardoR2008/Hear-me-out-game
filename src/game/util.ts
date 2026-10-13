@@ -1,4 +1,5 @@
-import type { ArrLike } from './types';
+import { FR, PL, SP } from './constants';
+import type { ArrLike, CakeSpec } from './types';
 
 export const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 export const pick = <T>(a: readonly T[]): T => a[Math.floor(Math.random() * a.length)];
@@ -35,6 +36,15 @@ export const asArr = <T>(x: ArrLike<T> | null | undefined): T[] =>
 
 export const errMsg = (e: unknown) => (e instanceof Error && e.message ? e.message : String(e));
 
+/** What to tell a player when signing in to the game failed, going by the reason Firebase gives. */
+export const signInTrouble = (e: unknown) => {
+  const why = String((e as { code?: unknown } | null)?.code || '') + ' ' + errMsg(e);
+  if (/too-many-requests|TOO_MANY_ATTEMPTS/i.test(why)) return 'Too many new players from this network right now. Wait a few minutes, then refresh the page.';
+  if (/network-request-failed/i.test(why)) return 'Could not reach the game. Check your internet, then refresh the page.';
+  if (/operation-not-allowed|admin-restricted-operation|configuration-not-found/i.test(why)) return 'Could not sign in. Turn on Anonymous sign-in in Firebase.';
+  return 'Could not sign in (' + errMsg(e) + '). Refresh the page to try again.';
+};
+
 const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 /** "05 OCT 2026 · 0907 HRS" */
 export const milStamp = (t: number) => {
@@ -60,6 +70,32 @@ export const normTheme = (t: unknown) => cleanTheme(t).toLowerCase();
 
 /** ["A", "B", "C"] → "A, B and C" */
 export const listJoin = (a: string[]) => (a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1]);
+
+/** 1 → "1 topping", 2 → "2 toppings" */
+export const plural = (n: number, word: string) => n + ' ' + word + (n === 1 ? '' : 's');
+
+/** "Chocolate sponge · Pink frosting · Gold board · 16 toppings · 1 drawing" (drawings left out when there are none). */
+export const recipeLine = (cake: CakeSpec, toppings: number, drawings: number) =>
+  [SP[cake.sponge].label + ' sponge', FR[cake.frosting].label + ' frosting', PL[cake.plate].label, plural(toppings, 'topping'), ...(drawings ? [plural(drawings, 'drawing')] : [])].join(' · ');
+
+/**
+ * A room code from whatever was typed or pasted: "abcd", "Room ABCD", or a whole invite link all give "ABCD".
+ * Takes the last 4-letter word if there is one, otherwise the first four letters.
+ */
+export const normCode = (v: unknown) => {
+  const words = String(v || '')
+      .toUpperCase()
+      .split(/[^A-Z]+/)
+      .filter(Boolean),
+    four = words.filter((w) => w.length === 4);
+  return four.length ? four[four.length - 1] : words.join('').slice(0, 4);
+};
+
+/** Nicknames that differ only in case or spacing count as the same name. */
+export const sameName = (a: unknown, b: unknown) => {
+  const n = (x: unknown) => String(x || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  return !!n(a) && n(a) === n(b);
+};
 
 /** A CSS url() value that survives quotes and backslashes in the address. */
 export const cssUrl = (src: string) =>

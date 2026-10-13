@@ -79,6 +79,9 @@ export async function firebaseNet(cfg: FirebaseOptions): Promise<Net> {
         void quiet(onDisconnect(r).cancel());
       };
     },
+    onConnected(cb) {
+      return onValue(ref(db, '.info/connected'), (s) => cb(s.val() === true));
+    },
     disconnect() {
       /* Firebase notices dropped connections by itself (onDisconnect). */
     },

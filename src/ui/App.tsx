@@ -24,6 +24,12 @@ export function App({ game }: { game: GameController }) {
   }, [night]);
 
   const s = vm.screen;
+  // A new step starts at its top, with its title, the step bar and the host's crown in view,
+  // not wherever the last step was scrolled to (on a phone that is often far down the page).
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [s]);
+
   return (
     <div className="app">
       {s !== 'join' && <Header vm={vm.header} toggle={vm.toggle} />}
@@ -37,6 +43,23 @@ export function App({ game }: { game: GameController }) {
       {s === 'theme' && <ThemeScreen vm={vm.themeStep} />}
       {CAKE_SCREENS.includes(s) && <CakeScreen game={game} vm={vm} />}
       {s === 'vote' && <VoteScreen vm={vm.vote} />}
+      {(vm.banners.offline || vm.banners.update) && (
+        <div className="sys-banners">
+          {vm.banners.offline && (
+            <div className="sys-banner sys-offline" role="status">
+              {vm.banners.offline}
+            </div>
+          )}
+          {vm.banners.update && (
+            <div className="sys-banner sys-update" role="status">
+              <span>{vm.banners.updateText}</span>
+              <button type="button" className="chip-btn" onClick={vm.banners.refresh}>
+                Refresh
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       {vm.curtain && <Curtain curtain={vm.curtain} />}
     </div>
   );

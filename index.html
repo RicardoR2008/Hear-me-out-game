@@ -10,7 +10,7 @@
     <meta name="theme-color" content="#FFF6E9" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <script>
-      // Apply the saved day/night choice before first paint so night mode doesn't flash.
+      // Apply the saved day/night choice before first paint so night mode does not flash.
       try {
         if (localStorage.getItem('hmo-theme') === 'night') document.documentElement.dataset.theme = 'night';
       } catch (e) {}

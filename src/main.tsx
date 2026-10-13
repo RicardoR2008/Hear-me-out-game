@@ -12,6 +12,7 @@ import { GameController, type GameEnv } from './game/controller';
 import { probeImage } from './game/image';
 import { createNet } from './net';
 import { App } from './ui/App';
+import { watchForUpdates } from './updateCheck';
 
 const storage = (() => {
   try {
@@ -32,7 +33,10 @@ const env: GameEnv = {
 };
 
 const game = new GameController(env);
+// An invite link (?room=ABCD) fills in the room code.
+game.useInvite(new URLSearchParams(location.search).get('room'));
 game.start();
+watchForUpdates(new URL(import.meta.url).pathname.split('/').pop() || '', () => game.setState({ updateReady: true }));
 
 // Drags, frosting lines and presenting keys work anywhere on the page.
 window.addEventListener('pointermove', (e) => game.onPointerMove(e));

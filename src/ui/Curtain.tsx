@@ -3,7 +3,7 @@ import { CUR } from '../game/constants';
 import type { CurtainState } from '../game/controller';
 import { mulberry } from '../game/util';
 
-// Velvet stage curtains that close over the pick screen, a five-second alarm clock, then open on the reveal.
+// Velvet stage curtains that close over the pick screen, a three-second alarm clock, then open on the reveal.
 
 /** Folds of red velvet as a gradient (seeded, so both panels look the same on every device). */
 const fabric = (seed: number) => {

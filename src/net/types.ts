@@ -33,8 +33,12 @@ export interface Net {
   tx(path: string, fn: (current: unknown) => unknown): Promise<TxResult>;
   /** Keeps `path` true while this client is connected and false once it goes away. Returns a stopper. */
   presence(path: string): Unsubscribe;
+  /** Calls `cb` with true/false whenever the connection to the database comes or goes (right away with the current state). */
+  onConnected(cb: (connected: boolean) => void): Unsubscribe;
   /** Simulates this client dropping off (practice and test backends). */
   disconnect(): void;
+  /** Simulates the connection going away and coming back (in-memory backends, for tests). */
+  setConnected?(connected: boolean): void;
   /** Deletes rooms created more than `maxAgeMs` ago. */
   pruneRooms(maxAgeMs: number): Promise<void>;
 }

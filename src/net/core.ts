@@ -112,6 +112,8 @@ export function memoryNet(core: Core, opt: MemoryOptions = {}): Net {
   const now = opt.now || (() => Date.now());
   const uid = opt.uid || 'u' + Math.random().toString(36).slice(2, 12);
   let pres: string | null = null;
+  let connected = true;
+  const connSubs = new Set<(c: boolean) => void>();
   const api: Net = {
     mode: opt.mode || 'memory',
     uid,
@@ -162,6 +164,19 @@ export function memoryNet(core: Core, opt: MemoryOptions = {}): Net {
       return () => {
         if (pres === p) pres = null;
       };
+    },
+    onConnected(cb) {
+      connSubs.add(cb);
+      defer(() => {
+        if (connSubs.has(cb)) cb(connected);
+      });
+      return () => {
+        connSubs.delete(cb);
+      };
+    },
+    setConnected(on) {
+      connected = on;
+      for (const cb of [...connSubs]) cb(on);
     },
     disconnect() {
       if (pres) core.apply([{ path: pres, val: false }]);

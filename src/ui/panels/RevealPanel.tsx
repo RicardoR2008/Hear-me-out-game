@@ -84,7 +84,7 @@ export function RevealPanel({ vm }: { vm: ViewModel['reveal'] }) {
             )}
           </div>
         </div>
-        {vm.presenting && <div className="present-hint">You're presenting. Click the card or press Space.</div>}
+        {vm.presenting && <div className="present-hint">You are presenting. Click the card or press Space.</div>}
         <div className="reacts" style={{ opacity: vm.canReact ? 1 : 0.4, pointerEvents: vm.canReact ? 'auto' : 'none' }}>
           {vm.reactBtns.map((r) => (
             <button key={r.key} type="button" className="react" onClick={r.onClick} aria-label={`${r.label} (${r.count})`}>

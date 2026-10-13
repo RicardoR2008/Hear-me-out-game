@@ -4,7 +4,7 @@ import { ACC, CHARS, FR, INK, INKC, LINE, MAXP, MINP, PENS, PL, REACTS, SP, STEP
 import type { GameController, ViewPlayer } from './controller';
 import { cardWFor, effScale } from './geometry';
 import type { CakePart, LabelPos, PickRec, ReactKey, ThemeMode, ToolKey } from './types';
-import { cleanTheme, cssUrl, listJoin, milStamp } from './util';
+import { cleanTheme, cssUrl, listJoin, milStamp, normCode, recipeLine } from './util';
 
 const FAINT = 'var(--faint,#6E6272)';
 const OK = 'var(--ok,#0F7A53)';
@@ -65,7 +65,8 @@ export function buildViewModel(g: GameController) {
   const full = (id: string): FullPick => {
     const p: PickRec = s.picks[id] || ({} as PickRec),
       o = pl[id] || ({} as ViewPlayer),
-      label = p.label || (id === 'me' ? s.name + "'s pick" : '');
+      // A pick saved without a name is "<owner>'s pick" for everyone (the keepsake says the same).
+      label = p.label || (id === 'me' ? s.name : o.name || 'Someone') + "'s pick";
     return {
       ...p,
       id,
@@ -215,14 +216,14 @@ export function buildViewModel(g: GameController) {
 
   const waitP = s.players.filter((p) => p.online && !dr[p.id]);
   const decoWaitText = !waitP.length
-    ? "Everyone's done. Picking starts in " + (s.decoGo || 3) + '…'
+    ? 'Everyone is done. Picking starts in ' + (s.decoGo || 3) + '…'
     : waitP.length <= 3
-      ? "You're done. Waiting for " + listJoin(waitP.map((p) => p.name)) + '.'
-      : "You're done. Waiting for " + waitP.length + ' more.';
+      ? 'You are done. Waiting for ' + listJoin(waitP.map((p) => p.name)) + '.'
+      : 'You are done. Waiting for ' + waitP.length + ' more.';
 
   const cakeCaption = dec
     ? meDone
-      ? "You're done. Tap Keep decorating to change anything."
+      ? 'You are done. Tap Keep decorating to change anything.'
       : s.hint || (pen ? 'Draw on the cake with the frosting pen.' : 'Click the cake to add toppings. Click one of yours to remove it.')
     : s.screen === 'submit'
       ? clashIds.length
@@ -251,14 +252,9 @@ export function buildViewModel(g: GameController) {
     hasTheme,
     themeLine: 'Theme: ' + s.cakeTheme,
     stamp: s.finishedAt ? milStamp(s.finishedAt) : '',
-    recipe: [
-      SP[s.cake.sponge].label + ' sponge',
-      FR[s.cake.frosting].label + ' frosting',
-      PL[s.cake.plate].label,
-      s.toppings.length + (s.toppings.length === 1 ? ' topping' : ' toppings'),
-      ...(s.strokes.length ? [s.strokes.length + (s.strokes.length === 1 ? ' drawing' : ' drawings')] : []),
-    ].join(' · '),
-    credits: 'Decorated by ' + listJoin(s.players.map((p) => (p.id === 'me' ? s.name : p.name))),
+    recipe: recipeLine(s.cake, s.toppings.length, s.strokes.length),
+    // Everyone who played this round: still here, or had a pick revealed. Not someone who left before taking part.
+    credits: 'Decorated by ' + listJoin(s.players.filter((p) => p.online || s.order.includes(p.id)).map((p) => (p.id === 'me' ? s.name : p.name))),
   };
 
   // ---- side panels ----------------------------------------------------------
@@ -357,6 +353,7 @@ export function buildViewModel(g: GameController) {
       const on = (me.labelPos || 'below') === k;
       return { key: k, label: l, on, bg: on ? '#FFD43B' : 'transparent', fg: on ? INKC : INK, onClick: () => g.updMine({ labelPos: k }) };
     }),
+    fileErr: s.fileErr,
     captionVal: me.caption || '',
     onCaption: (v: string) => g.updMine({ caption: v }),
     cantLock: !me.img || s.imgErr,
@@ -375,10 +372,10 @@ export function buildViewModel(g: GameController) {
     okReveal: () => g.setRevealOk(true),
     notYet: () => g.setRevealOk(false),
     revealWaitText: !notReadyYet.length
-      ? "Everyone's ready. The reveal is starting…"
+      ? 'Everyone is ready. The reveal is starting…'
       : notReadyYet.length <= 3
-        ? "You're ready. Waiting for " + listJoin(notReadyYet.map((p) => p.name)) + '.'
-        : "You're ready. Waiting for " + notReadyYet.length + ' more.',
+        ? 'You are ready. Waiting for ' + listJoin(notReadyYet.map((p) => p.name)) + '.'
+        : 'You are ready. Waiting for ' + notReadyYet.length + ' more.',
   };
 
   const r = (curId && s.reacts[curId]) || {};
@@ -397,7 +394,7 @@ export function buildViewModel(g: GameController) {
       const k = curParts[partN];
       return k === 'img' ? 'Show the picture' : k === 'label' ? 'Show the name' : partN === 2 ? 'Show my defense' : 'Next line';
     })(),
-    mysteryText: mineUp ? "Your turn. Show them when you're ready." : curName + ' is about to show you…',
+    mysteryText: mineUp ? 'Your turn. Show them when you are ready.' : curName + ' is about to show you…',
     presenterText: curId && pl[curId] && pl[curId].online === false ? curName + ' left. The host is showing their pick…' : curName + ' is presenting…',
     imgShown: partN >= 1,
     labelShown: partN >= 2,
@@ -431,12 +428,20 @@ export function buildViewModel(g: GameController) {
 
   const award = (c: 'best' | 'unh') => {
     if (!s.results || !s.results[c]) return null;
-    const [id, v] = s.results[c]!;
+    const [id, v] = s.results[c]!,
+      tie = c === 'best' ? s.results.bestTie : s.results.unhTie;
     const f = full(id);
-    return { ...f, key: c, title: c === 'best' ? 'Best pick' : 'Most unhinged', sub: (id === 'me' ? 'Your pick' : f.name + "'s pick") + ' · ' + v + (v === 1 ? ' vote' : ' votes') };
+    return {
+      ...f,
+      key: c,
+      title: c === 'best' ? 'Best pick' : 'Most unhinged',
+      sub: (id === 'me' ? 'Your pick' : f.name + "'s pick") + ' · ' + v + (v === 1 ? ' vote' : ' votes') + (tie ? ' · Tie broken at random' : ''),
+    };
   };
+  const winners = [award('best'), award('unh')].filter((w) => w !== null);
   const results = {
-    winners: [award('best'), award('unh')].filter((w) => w !== null),
+    winners,
+    noWinners: s.screen === 'results' && !winners.length ? 'No votes this round, so no awards. The cake still looks great.' : '',
     saveKeepsake: () => void g.exportKeepsake(),
     keepsakeBusy: s.keepsake === 'working',
     keepsakeMsg:
@@ -445,34 +450,44 @@ export function buildViewModel(g: GameController) {
         : s.keepsake === 'done'
           ? 'Saved ' + s.keepsakeName + '. It opens in any browser.'
           : s.keepsake === 'error'
-            ? "Couldn't save the keepsake. Try again."
+            ? 'Could not save the keepsake. Try again.'
             : '',
     playAgain: () => g.playAgain(),
   };
 
   const votesIn = g.state.room?.votes || {};
-  const waitingVoters = s.players.filter((p) => p.online && p.id !== 'me' && !votesIn[p.uid]).map((p) => p.name);
+  // Someone whose own pick is the only one shown has nothing to vote on, so nobody waits for them.
+  const hasCards = (p: ViewPlayer) => s.order.some((id) => id !== p.id);
+  const waitingVoters = s.players.filter((p) => p.online && p.id !== 'me' && !votesIn[p.uid] && hasCards(p)).map((p) => p.name);
+  // Once my votes are in, show what I sent (also after a refresh), and the buttons stop changing it.
+  const sent = (s.uid && votesIn[s.uid]) || null,
+    myBest = sent ? (sent.best === s.uid ? 'me' : sent.best) : s.votes.best,
+    myUnh = sent ? (sent.unh === s.uid ? 'me' : sent.unh) : s.votes.unh;
+  const voteCards = s.order
+    .filter((id) => id !== 'me')
+    .map((id) => {
+      const f = full(id),
+        b = myBest === id,
+        u = myUnh === id;
+      return {
+        ...f,
+        isBest: b,
+        isUnh: u,
+        bestBg: b ? '#FFD43B' : CARD,
+        bestFg: b ? INKC : INK,
+        bestSh: b ? SHADOW3 : 'none',
+        unhBg: u ? ACC : CARD,
+        unhFg: u ? INKC : INK,
+        unhSh: u ? SHADOW3 : 'none',
+        locked: s.hasVoted,
+        onBest: () => g.chooseVote('best', id),
+        onUnh: () => g.chooseVote('unh', id),
+      };
+    });
   const vote = {
-    cards: s.order
-      .filter((id) => id !== 'me')
-      .map((id) => {
-        const f = full(id),
-          b = s.votes.best === id,
-          u = s.votes.unh === id;
-        return {
-          ...f,
-          isBest: b,
-          isUnh: u,
-          bestBg: b ? '#FFD43B' : CARD,
-          bestFg: b ? INKC : INK,
-          bestSh: b ? SHADOW3 : 'none',
-          unhBg: u ? ACC : CARD,
-          unhFg: u ? INKC : INK,
-          unhSh: u ? SHADOW3 : 'none',
-          onBest: () => g.chooseVote('best', id),
-          onUnh: () => g.chooseVote('unh', id),
-        };
-      }),
+    cards: voteCards,
+    nothingToVote: !voteCards.length,
+    nothingText: 'The only pick shown was yours, so there is nothing for you to vote on. The results are on the way…',
     cantVote: s.hasVoted || !(s.votes.best && s.votes.unh),
     voteOpacity: !s.hasVoted && s.votes.best && s.votes.unh ? 1 : 0.4,
     hasVoted: s.hasVoted,
@@ -488,7 +503,8 @@ export function buildViewModel(g: GameController) {
     code: s.code,
     isHost: s.isHost,
     chars: CHARS.map((c, i) => {
-      const own = s.players.find((p) => p.char === i),
+      // Players who left don't hold their character: anyone can take it.
+      const own = s.players.find((p) => p.char === i && (p.online || p.id === 'me')),
         mine = !!own && own.id === 'me';
       return {
         key: c.n,
@@ -511,7 +527,16 @@ export function buildViewModel(g: GameController) {
       ] as [ThemeMode, string][]
     ).map(([k, l]) => {
       const on = s.themeMode === k;
-      return { key: k, label: l, on, bg: on ? '#FF8A5C' : 'transparent', fg: on ? INKC : INK, onClick: () => g.setThemeMode(k) };
+      return {
+        key: k,
+        label: l,
+        on,
+        bg: on ? '#FF8A5C' : 'transparent',
+        fg: on ? INKC : INK,
+        disabled: !s.isHost,
+        title: s.isHost ? '' : 'The host picks this',
+        onClick: () => g.setThemeMode(k),
+      };
     }),
     isAgreed: s.themeMode === 'agreed',
     themeAgreed: s.themeAgreed,
@@ -525,9 +550,18 @@ export function buildViewModel(g: GameController) {
     start: () => g.startGame(),
     cantStart,
     startOpacity: cantStart ? 0.4 : 1,
+    // Who is host is shown big at the top of the lobby (role); this line under the Start button is only a reminder.
     note:
       (online < MINP ? 'Need at least ' + MINP + ' players. Share the code ' + s.code + '.' : online + ' of ' + MAXP + ' players.') +
-      (s.isHost ? " You're the host." : ' ' + s.hostName + ' (host) starts the game.'),
+      (s.isHost ? '' : ' Only the host can start the game.'),
+    role: s.isHost
+      ? { host: true, icon: '👑', title: 'You are the host', text: 'You start the game when everyone is here.' }
+      : {
+          host: false,
+          icon: EMO.me || '🙂',
+          title: 'You are a player',
+          text: (s.hostName ? s.hostName + ' is the host and' : 'The host') + ' will start the game.',
+        },
   };
 
   const isTheme = s.screen === 'theme';
@@ -582,6 +616,8 @@ export function buildViewModel(g: GameController) {
       emoji: EMO[p.id],
       plateBg: p.id === 'me' ? '#FFD43B' : '#DCD6E0',
       op: p.online ? 1 : 0.35,
+      /** The host wears a crown in the header on every screen. */
+      host: p.host,
       title: p.name + (p.host ? ' (host)' : '') + (p.online ? '' : ' (away)'),
     })),
     steps: STEPS.map((x, i) => ({
@@ -597,26 +633,30 @@ export function buildViewModel(g: GameController) {
     name: s.name,
     onName: (v: string) => g.setState({ name: v, err: '' }),
     codeInput: s.codeInput,
-    onCode: (v: string) =>
-      g.setState({
-        codeInput: v
-          .toUpperCase()
-          .replace(/[^A-Z]/g, '')
-          .slice(0, 4),
-        err: '',
-      }),
+    // Typing, or pasting "Room ABCD" or a whole invite link, all leave just the 4-letter code.
+    onCode: (v: string) => g.setState({ codeInput: normCode(v), err: '' }),
     create: () => void g.create(),
     join: () => void g.joinRoom(),
+    /** Enter in the nickname box: join if a whole code is typed in, otherwise make a room. */
+    enterName: () => void (s.codeInput.length === 4 ? g.joinRoom() : g.create()),
     busy: s.busy,
     busyOpacity: s.busy || !s.uid ? 0.6 : 1,
     err: s.err,
+    note: s.joinNote,
     netNote: s.netNote,
+  };
+  const banners = {
+    offline: s.offline ? 'Connection lost. Trying to reconnect…' : '',
+    update: s.updateReady,
+    updateText: 'A new version of the game is out.',
+    refresh: () => window.location.reload(),
   };
 
   return {
     screen: s.screen,
     code: s.code,
     curtain: s.curtain,
+    banners,
     toggle,
     header,
     join,

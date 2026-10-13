@@ -107,3 +107,14 @@ export const CURTAIN_TOTAL = CUR.close + CUR.count + CUR.ring + CUR.open + 60;
 
 export const ROOM_CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 export const ROOM_MAX_AGE_MS = 24 * 3600 * 1000;
+
+/** The host refreshes its heartbeat this often while its screen is awake. */
+export const HOST_BEAT_MS = 2000;
+/**
+ * During a game, a host whose heartbeat is older than this (phone locked, app switched, tab asleep)
+ * hands over to the next player so nobody is left waiting. Not in the lobby, where hosts often
+ * switch apps to send the code.
+ */
+export const HOST_STALE_MS = 8000;
+/** Create/Join pressed before the connection is ready waits this long before giving up. */
+export const CONNECT_WAIT_MS = 15000;

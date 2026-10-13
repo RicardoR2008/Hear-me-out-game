@@ -23,9 +23,16 @@ export function JoinScreen({ vm, toggle }: { vm: ViewModel['join']; toggle: View
               className="field field-name"
               value={vm.name}
               onChange={(e) => vm.onName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !vm.busy) {
+                  e.preventDefault();
+                  vm.enterName();
+                }
+              }}
               maxLength={16}
               placeholder="What should we call you?"
               autoComplete="nickname"
+              enterKeyHint="go"
             />
           </label>
           <button type="button" className="btn btn-big btn-pink" onClick={vm.create} disabled={vm.busy} style={{ opacity: vm.busyOpacity }}>
@@ -42,22 +49,28 @@ export function JoinScreen({ vm, toggle }: { vm: ViewModel['join']; toggle: View
               value={vm.codeInput}
               onChange={(e) => vm.onCode(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
+                if (e.key === 'Enter' && !vm.busy) {
                   e.preventDefault();
                   vm.join();
                 }
               }}
-              maxLength={12}
+              maxLength={200}
               placeholder="CODE"
               aria-label="Room code"
               autoCapitalize="characters"
               autoComplete="off"
               spellCheck={false}
+              enterKeyHint="go"
             />
             <button type="button" className="btn btn-plain btn-join" onClick={vm.join} disabled={vm.busy} style={{ opacity: vm.busyOpacity }}>
               Join
             </button>
           </div>
+          {vm.note && (
+            <div className="join-note" role="status">
+              {vm.note}
+            </div>
+          )}
           {vm.err && (
             <div className="err" role="alert">
               {vm.err}

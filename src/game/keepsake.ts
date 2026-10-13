@@ -1,5 +1,6 @@
-import { FR, PL, REACTS, SP } from './constants';
+import { REACTS } from './constants';
 import type { View } from './controller';
+import { recipeLine } from './util';
 
 const esc = (t: unknown) =>
   String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string);
@@ -82,7 +83,8 @@ export async function buildKeepsake(s: View, stage: HTMLElement): Promise<{ html
   const award = (k: 'best' | 'unh', title: string) => {
     const r = s.results && s.results[k];
     if (!r) return '';
-    const [id, v] = r;
+    const [id, v] = r,
+      tie = k === 'best' ? s.results!.bestTie : s.results!.unhTie;
     return (
       '<div style="display:flex;gap:16px;align-items:center;background:#fff;border:2px solid #1C1520;border-radius:20px;padding:14px;box-shadow:0 5px 0 #1C1520">' +
       pic(id, 'width:88px;height:88px;flex:none;border-radius:14px') +
@@ -95,21 +97,15 @@ export async function buildKeepsake(s: View, stage: HTMLElement): Promise<{ html
       "'s pick · " +
       v +
       (v === 1 ? ' vote' : ' votes') +
+      (tie ? ' · Tie broken at random' : '') +
       '</div></div></div>'
     );
   };
-  const date = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
-  const cakeDesc =
-    SP[s.cake.sponge].label +
-    ' sponge · ' +
-    FR[s.cake.frosting].label +
-    ' frosting · ' +
-    PL[s.cake.plate].label +
-    ' · ' +
-    s.toppings.length +
-    ' toppings · ' +
-    s.strokes.length +
-    ' frosting drawings';
+  // The day the cake was finished (the same moment the plaque shows), not the day the file was saved.
+  const date = new Date(s.finishedAt || Date.now()).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+  const cakeDesc = recipeLine(s.cake, s.toppings.length, s.strokes.length);
+  // Same people the plaque credits: still here, or had a pick revealed.
+  const credited = s.players.filter((p) => p.online || s.order.includes(p.id));
   const html =
     '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hear Me Out cake · Room ' +
     esc(s.code) +
@@ -123,7 +119,7 @@ export async function buildKeepsake(s: View, stage: HTMLElement): Promise<{ html
     ' · ' +
     esc(date) +
     ' · ' +
-    s.players.map((p) => esc(p.id === 'me' ? s.name : p.name)).join(', ') +
+    credited.map((p) => esc(p.id === 'me' ? s.name : p.name)).join(', ') +
     '</div>' +
     (s.cakeTheme ? '<div style="font-size:18px;font-weight:800">Theme: ' + esc(s.cakeTheme) + '</div>' : '') +
     '</header>' +
@@ -136,7 +132,7 @@ export async function buildKeepsake(s: View, stage: HTMLElement): Promise<{ html
     award('best', 'Best pick') +
     award('unh', 'Most unhinged') +
     '</div></section>' +
-    '<section style="display:flex;flex-direction:column;gap:16px"><div style="font:400 26px Bowlby One,sans-serif">Everyone\'s hear me outs</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:18px">' +
+    '<section style="display:flex;flex-direction:column;gap:16px"><div style="font:400 26px Bowlby One,sans-serif">All the hear me outs</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:18px">' +
     s.order.map(card).join('') +
     '</div></section>' +
     '<footer style="font-size:13px;color:#6E6272">Saved from Hear Me Out.</footer></main></body></html>';

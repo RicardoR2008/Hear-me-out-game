@@ -27,6 +27,8 @@ export type CakePart = keyof CakeSpec;
 export interface PlayerRec {
   name?: string;
   char?: number;
+  /** When this player took their character. If two end up on one, the most recent choice keeps it. */
+  charAt?: number;
   color?: string;
   joinedAt?: number;
   online?: boolean;
@@ -108,6 +110,8 @@ export type Award = [string, number];
 export interface Meta {
   createdAt?: number;
   host?: string;
+  /** The host's heartbeat: refreshed every couple of seconds while the host's screen is awake. */
+  hb?: number | null;
   phase?: Phase;
   themeMode?: ThemeMode;
   round?: number;
@@ -124,7 +128,8 @@ export interface Meta {
   order?: ArrLike<string> | null;
   idx?: number;
   part?: number;
-  results?: { best?: ArrLike<string | number> | null; unh?: ArrLike<string | number> | null } | null;
+  /** Each award is [pick owner, votes]. A tie flag means the winner was drawn at random from the tied picks. */
+  results?: { best?: ArrLike<string | number> | null; unh?: ArrLike<string | number> | null; bestTie?: boolean; unhTie?: boolean } | null;
   finishedAt?: number | null;
 }
 

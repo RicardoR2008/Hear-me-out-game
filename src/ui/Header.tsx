@@ -13,6 +13,11 @@ export function Header({ vm, toggle }: { vm: ViewModel['header']; toggle: ViewMo
         <div className="hdr-players">
           {vm.players.map((p) => (
             <div key={p.key} title={p.title} className="hdr-player" style={{ opacity: p.op }}>
+              {p.host && (
+                <span className="hdr-crown" role="img" aria-label="Host">
+                  👑
+                </span>
+              )}
               <div className="hdr-avatar" style={{ background: p.color }}>
                 {p.emoji}
               </div>

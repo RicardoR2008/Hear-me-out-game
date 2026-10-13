@@ -42,7 +42,7 @@ With `hmo-config.js` set to `null` the game runs in practice mode instead, where
    - Click the gear next to **Project Overview → Project settings**.
    - Scroll to **Your apps** → click the **`</>`** (Web) icon.
    - Nickname: `hear-me-out`. Leave "Firebase Hosting" unchecked. Click **Register app**.
-   - You'll see a block that starts with `const firebaseConfig = {`. Copy everything between the `{` and `}`.
+   - You will see a block that starts with `const firebaseConfig = {`. Copy everything between the `{` and `}`.
 7. Open [`public/hmo-config.js`](public/hmo-config.js) and replace `null` so it looks like:
    ```js
    window.HMO_FIREBASE_CONFIG = {
@@ -53,7 +53,7 @@ With `hmo-config.js` set to `null` the game runs in practice mode instead, where
      appId: "1:…:web:…"
    };
    ```
-   If there's no `databaseURL` line, add it: copy the URL shown at the top of the **Realtime Database → Data** page.
+   If there is no `databaseURL` line, add it: copy the URL shown at the top of the **Realtime Database → Data** page.
 
 These keys are meant to be public in a web game; the rules from step 5 are what protect the data. `hmo-config.js` is loaded as-is when the page opens (it is not bundled), so you can also edit it in an already-built `dist/` folder.
 
@@ -70,21 +70,22 @@ Prefer not to use Actions? Run `npm run build` and upload the **contents** of `d
 
 ## How to play
 
-- One person taps **Create a room** and reads out the 4-letter code. Everyone else types it and taps **Join**. 2–12 players.
-- The first person in is the host and starts the game. If the host leaves, the next person who joined becomes host automatically.
+- One person taps **Create a room** and reads out the 4-letter code (or taps **Copy invite link** and sends it: the link opens the game with the code filled in). Everyone else types it and taps **Join**. 2–12 players.
+- The first person in is the host and starts the game. The top of the lobby says in big letters whether you are the host or a player, and the host has a crown 👑 on their picture at the top of every screen. If the host leaves, the next person who joined becomes host automatically. The same happens mid-game if the host's screen stops answering for about 8 seconds (phone locked, app switched), so nobody is left waiting.
 - Pick a theme (everyone suggests, then votes — or type one you already agreed on), decorate the cake together, then secretly pick your hear me out and stick it on the cake.
-- When your pick is set, tap **Lock it in**, then **I'm ready for the reveal**. Nobody can start the reveal alone: once everyone still in the room is ready, the curtains close for a 3-second countdown. Tap **Not yet** (or **Undo lock-in**) to take your OK back.
+- When your pick is set, tap **Lock it in**, then **I am ready for the reveal**. Nobody can start the reveal alone: once everyone still in the room is ready, the curtains close for a 3-second countdown. Tap **Not yet** (or **Undo lock-in**) to take your OK back.
 - Reveals happen one at a time: the owner shows the picture, then the name, then each line of their defense. Everyone else reacts.
-- Vote for Best and Most unhinged, then save a keepsake page of the finished cake.
-- Refreshing or losing signal is fine: open the link again and you're put back in your seat.
-- Pictures you upload are shrunk before they're sent, so they arrive fast.
+- Vote for Best and Most unhinged (a tie is broken at random, and the award says so), then save a keepsake page of the finished cake.
+- Refreshing or losing signal is fine: open the link again and you are put back in your seat. While the connection is down the game says **Connection lost**; if a new version of the game is published while you are playing, it offers a **Refresh**.
+- Pictures you upload are shrunk before they are sent, so they arrive fast.
 
 Room data, including pictures, can be read by anyone using the game while the room exists. Rooms older than 24 hours are deleted the next time someone opens the game.
 
 ## If something goes wrong
 
-- **"Could not sign in"** → Anonymous sign-in isn't enabled (Part 1, step 3), or your site's domain isn't in Authorized domains (step 4).
-- **Stuck on "Joining room…" after Create** → check the database Rules were published (step 5).
+- **"Could not sign in"** → Anonymous sign-in is not enabled (Part 1, step 3), or your site's domain is not in Authorized domains (step 4).
+- **"Too many new players from this network right now"** → Firebase limits how many new players can start from one network in an hour. Wait a few minutes, then refresh.
+- **"Could not open that room"**, or stuck on "Joining room…" after Create → check the database Rules were published (step 5).
 - **"No room with that code"** → the code is wrong, or the room is over 24 hours old.
 - **A player is greyed out** → they lost connection. The game skips waiting for them until they come back.
 
@@ -99,8 +100,9 @@ src/game/viewModel.ts     Turns game state into exactly what each screen shows
 src/game/geometry.ts      Cake shape and where picks may stand without overlapping
 src/game/keepsake.ts      The downloadable keepsake page
 src/ui/                   React screens; src/ui/cake/ draws the cake (inline styles, copied by the keepsake)
+src/updateCheck.ts        Notices when a newer version has been published while a page is open
 src/styles.css            Day/night colors, animations and screen styles
 tests/                    Multiplayer simulations (Vitest)
 ```
 
-The game logic doesn't depend on React: `GameController` holds local state, mirrors the shared room (`rooms/<CODE>` in the database), and when it belongs to the host, advances phases when everyone is ready. The UI subscribes to it and renders from `buildViewModel()`.
+The game logic does not depend on React: `GameController` holds local state, mirrors the shared room (`rooms/<CODE>` in the database), and when it belongs to the host, advances phases when everyone is ready (each step is a database transaction, so two players acting as host at once still move the room on only once). The UI subscribes to it and renders from `buildViewModel()`.

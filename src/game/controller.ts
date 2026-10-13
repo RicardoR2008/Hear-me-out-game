@@ -1,5 +1,26 @@
 import type { Net, Unsubscribe } from '../net/types';
-import { CHARS, COLORS, CUR, CURTAIN_TOTAL, FR, INK, MAXP, MINP, NOUN, PENS, PL, REACTS, ROOM_CODE_LETTERS, ROOM_MAX_AGE_MS, SP, STRIPES, newCake } from './constants';
+import {
+  CHARS,
+  COLORS,
+  CONNECT_WAIT_MS,
+  CUR,
+  CURTAIN_TOTAL,
+  FR,
+  HOST_BEAT_MS,
+  HOST_STALE_MS,
+  INK,
+  MAXP,
+  MINP,
+  NOUN,
+  PENS,
+  PL,
+  REACTS,
+  ROOM_CODE_LETTERS,
+  ROOM_MAX_AGE_MS,
+  SP,
+  STRIPES,
+  newCake,
+} from './constants';
 import { GRX, GRY, GT, GX, freeSpotFor, inCake, inTop, layoutPicks, pickClash } from './geometry';
 import { shrinkImage } from './image';
 import { buildKeepsake, downloadHtml } from './keepsake';
@@ -8,6 +29,7 @@ import type {
   CakePart,
   CakeSpec,
   DayNight,
+  Meta,
   Phase,
   PenKey,
   PickRec,
@@ -21,7 +43,7 @@ import type {
   ToolKey,
   ToppingType,
 } from './types';
-import { asArr, capLines, cleanTheme, errMsg, normTheme, pick, rnd, shuffle } from './util';
+import { asArr, capLines, cleanTheme, errMsg, normCode, normTheme, pick, rnd, sameName, shuffle, signInTrouble } from './util';
 
 export interface KeyValueStore {
   getItem(k: string): string | null;
@@ -73,8 +95,14 @@ export interface LocalState {
   codeInput: string;
   code: string;
   err: string;
+  /** Status line on the join screen while a Create/Join waits for the connection. */
+  joinNote: string;
   busy: boolean;
   uid: string | null;
+  /** The connection dropped after having worked (shows "Connection lost" until it's back). */
+  offline: boolean;
+  /** A newer version of the game has been published since this page loaded. */
+  updateReady: boolean;
   room: Room | null;
   netMode: string;
   netNote: string;
@@ -83,6 +111,8 @@ export interface LocalState {
   hint: string;
   linkVal: string;
   imgErr: boolean;
+  /** The file dropped or chosen isn't a picture. */
+  fileErr: boolean;
   dragOver: boolean;
   themeIn: string;
   votes: { best: string | null; unh: string | null };
@@ -171,7 +201,7 @@ export interface View extends Omit<LocalState, 'screen'> {
   /** Seconds left before picking starts (everyone done decorating). */
   decoGo: number | null;
   curtain: CurtainState | null;
-  results: { best: Award | null; unh: Award | null } | null;
+  results: { best: Award | null; unh: Award | null; bestTie: boolean; unhTie: boolean } | null;
   finishedAt: number | null;
   pickN: number;
   isHost: boolean;
@@ -230,14 +260,22 @@ export class GameController {
   /** Things I added while decorating, newest last (for "Undo mine"). */
   private myHist: string[] = [];
   private seenEv = new Set<string>();
-  /** Host transitions already triggered this round. */
-  private onceKeys: Record<string, boolean> = {};
   /** My pick, updated synchronously while dragging (state.myPick mirrors it). */
   private mine: PickRec | null = null;
   private dragOff = { x: 0, y: 0 };
   private autoAt = 0;
   /** Set if signing in failed for good, so Create/Join can say why instead of "still connecting". */
   private signInError = '';
+  /** Create/Join pressed before the connection was ready: it runs by itself once it is. */
+  private pendingAct: 'create' | 'join' | null = null;
+  private pendingT: number | null = null;
+  private everConnected = false;
+  /** When I last refreshed the host heartbeat. */
+  private beatAt = 0;
+  /** Room transitions with a transaction in flight, so each is tried once at a time. */
+  private inflight = new Set<string>();
+  /** Room code from an invite link (?room=ABCD). */
+  private invite = '';
 
   constructor(env: GameEnv) {
     this.env = env;
@@ -249,8 +287,11 @@ export class GameController {
       codeInput: '',
       code: '',
       err: '',
+      joinNote: '',
       busy: false,
       uid: null,
+      offline: false,
+      updateReady: false,
       room: null,
       netMode: '',
       netNote: '',
@@ -259,6 +300,7 @@ export class GameController {
       hint: '',
       linkVal: '',
       imgErr: false,
+      fileErr: false,
       dragOver: false,
       themeIn: '',
       votes: { best: null, unh: null },
@@ -332,14 +374,6 @@ export class GameController {
   uidOf(id: string) {
     return id === 'me' ? (this.state.uid as string) : id;
   }
-  /** True the first time `k` is asked for in the current round. */
-  private once(k: string) {
-    const m = this.state.room?.meta || {},
-      key = k + ':' + (m.round || 1);
-    if (this.onceKeys[key]) return false;
-    this.onceKeys[key] = true;
-    return true;
-  }
 
   // ---- lifecycle ------------------------------------------------------------
 
@@ -358,14 +392,24 @@ export class GameController {
                 (net.fallbackReason ? ' Firebase error: ' + net.fallbackReason : ' Add your Firebase config to play online.')
               : '',
         });
+        // "Connection lost" shows only after the connection has worked once (not while first connecting).
+        net.onConnected((on) => {
+          if (on) this.everConnected = true;
+          const offline = !on && this.everConnected;
+          if (offline !== this.state.offline) this.setState({ offline });
+        });
         return net.ready().then((uid) => {
           this.setState({ uid });
-          void this.tryRejoin();
+          const act = this.pendingAct;
+          this.clearPending();
+          if (act) void (act === 'create' ? this.create() : this.joinRoom());
+          else void this.tryRejoin();
           void net.pruneRooms(ROOM_MAX_AGE_MS);
         });
       })
       .catch((e) => {
-        this.signInError = 'Could not sign in (' + errMsg(e) + '). Turn on Anonymous sign-in in Firebase.';
+        this.signInError = signInTrouble(e);
+        this.clearPending();
         this.setState({ err: this.signInError });
       });
     const loop = () => {
@@ -377,6 +421,38 @@ export class GameController {
       this.tickT = this.env.setTimeout(loop, this.isLive() ? 100 : 250);
     };
     this.tickT = this.env.setTimeout(loop, 250);
+  }
+
+  /** Create/Join was pressed before the connection was ready: say so and do it as soon as it is. */
+  private waitForConnection(act: 'create' | 'join') {
+    if (this.signInError) {
+      this.setState({ err: this.signInError });
+      return;
+    }
+    this.pendingAct = act;
+    this.env.clearTimeout(this.pendingT);
+    this.pendingT = this.env.setTimeout(() => {
+      this.pendingT = null;
+      if (!this.pendingAct) return;
+      this.pendingAct = null;
+      this.setState({ busy: false, joinNote: '', err: 'Still connecting. Check your internet, then try again.' });
+    }, CONNECT_WAIT_MS);
+    this.setState({ busy: true, err: '', joinNote: 'Still connecting… It will go through on its own.' });
+  }
+  private clearPending() {
+    const was = !!this.pendingAct;
+    this.pendingAct = null;
+    this.env.clearTimeout(this.pendingT);
+    this.pendingT = null;
+    if (was) this.setState({ busy: false, joinNote: '' });
+  }
+
+  /** A room code from an invite link (?room=ABCD): fill it in, ready to join. Call before start(). */
+  useInvite(raw: unknown) {
+    const c = normCode(raw);
+    if (c.length !== 4) return;
+    this.invite = c;
+    this.setState({ codeInput: c });
   }
 
   stop() {
@@ -407,8 +483,15 @@ export class GameController {
       .map(([uid, p]) => ({ ...p, uid }))
       .sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0) || (a.uid < b.uid ? -1 : 1));
     const active = all.filter((p) => p.online !== false);
-    const h = active.find((p) => p.uid === m.host) || active[0] || null;
+    const named = active.find((p) => p.uid === m.host);
+    // Mid-game, a host whose screen has stopped answering hands over to the next player.
+    const h = (named && this.hostQuiet(m) ? active.find((p) => p.uid !== m.host) : named) || named || active[0] || null;
     return { host: h ? h.uid : null, active, all };
+  }
+  /** The host's heartbeat has gone quiet during a game (phone locked, app switched, tab asleep). */
+  private hostQuiet(m: Meta) {
+    const ph = m.phase || 'lobby';
+    return ph !== 'lobby' && ph !== 'results' && !!m.hb && this.now() - m.hb > HOST_STALE_MS;
   }
   amHost() {
     return !!this.state.uid && this.hostInfo().host === this.state.uid;
@@ -522,7 +605,7 @@ export class GameController {
       const x = asArr(a as string[]);
       return a ? [L(String(x[0])), Number(x[1])] : null;
     };
-    const res = M.results ? { best: award(M.results.best), unh: award(M.results.unh) } : null;
+    const res = M.results ? { best: award(M.results.best), unh: award(M.results.unh), bestTie: !!M.results.bestTie, unhTie: !!M.results.unhTie } : null;
     const me = players.find((p) => p.id === 'me');
     const cake = { ...newCake(), ...(R.cake || {}) };
     return {
@@ -572,6 +655,8 @@ export class GameController {
     const code = this.load('hmo-room'),
       uid = this.state.uid;
     if (!code || !uid || this.state.screen !== 'join' || !this.net) return;
+    // An invite link to another room wins over going back to the last one.
+    if (this.invite && this.invite !== code) return;
     try {
       const room = (await this.net.get('rooms/' + code)) as Room | null;
       if (room && room.meta && (room.players || {})[uid]) {
@@ -590,23 +675,26 @@ export class GameController {
       return;
     }
     if (!this.net || !this.state.uid) {
-      this.setState({ err: this.signInError || 'Still connecting. Try again in a second.' });
+      this.waitForConnection('create');
       return;
     }
     this.setState({ busy: true, err: '' });
     try {
+      const uid = this.state.uid;
       for (let i = 0; i < 6; i++) {
         const code = Array.from({ length: 4 }, () => ROOM_CODE_LETTERS[Math.floor(Math.random() * ROOM_CODE_LETTERS.length)]).join('');
-        const r = await this.net.tx('rooms/' + code + '/meta', (cur) =>
-          cur ? undefined : { createdAt: this.now(), host: this.state.uid, phase: 'lobby', themeMode: 'vote', round: 1 },
+        // The whole room is written in one go, so scraps of an old room with this code can't sneak into the new one.
+        const r = await this.net.tx('rooms/' + code, (cur) =>
+          cur && (cur as Room).meta
+            ? undefined
+            : { meta: { createdAt: this.now(), host: uid, hb: this.now(), phase: 'lobby', themeMode: 'vote', round: 1 }, players: { [uid]: this.seatFor({}) } },
         );
         if (r.committed) {
-          await this.addMe(code, {});
           this.enterRoom(code);
           return;
         }
       }
-      this.setState({ busy: false, err: "Couldn't make a room. Try again." });
+      this.setState({ busy: false, err: 'Could not make a room. Try again.' });
     } catch (e) {
       this.setState({ busy: false, err: 'Network error: ' + errMsg(e) });
     }
@@ -624,7 +712,7 @@ export class GameController {
       return;
     }
     if (!this.net || !this.state.uid) {
-      this.setState({ err: this.signInError || 'Still connecting. Try again in a second.' });
+      this.waitForConnection('join');
       return;
     }
     this.setState({ busy: true, err: '' });
@@ -635,10 +723,17 @@ export class GameController {
         return;
       }
       const ps = room.players || {},
-        uid = this.state.uid;
+        uid = this.state.uid,
+        nick = name.slice(0, 16),
+        clash = Object.entries(ps).some(([k, p]) => k !== uid && p.online !== false && sameName(p.name, nick)),
+        clashErr = 'Someone in this room is already called ' + nick + '. Try another nickname.';
       if (ps[uid]) {
+        if (clash) {
+          this.setState({ busy: false, err: clashErr });
+          return;
+        }
         // Already in this room (refresh, or came back after leaving): take my seat again.
-        await this.net.update('rooms/' + c + '/players/' + uid, { name: name.slice(0, 16) });
+        await this.net.update('rooms/' + c + '/players/' + uid, { name: nick });
         this.enterRoom(c);
         return;
       }
@@ -650,25 +745,32 @@ export class GameController {
         this.setState({ busy: false, err: 'That room is full (' + MAXP + ' players).' });
         return;
       }
-      await this.addMe(c, ps);
+      if (clash) {
+        this.setState({ busy: false, err: clashErr });
+        return;
+      }
+      await this.db.set('rooms/' + c + '/players/' + uid, this.seatFor(ps));
       this.enterRoom(c);
     } catch (e) {
       this.setState({ busy: false, err: 'Network error: ' + errMsg(e) });
     }
   }
 
-  private addMe(code: string, ps: Record<string, PlayerRec>) {
+  /** My seat in a room: a character and color nobody here is using (players who left don't hold theirs). */
+  private seatFor(ps: Record<string, PlayerRec>): PlayerRec {
     const on = Object.values(ps).filter((p) => p.online !== false),
       used = new Set(on.map((p) => p.char)),
       usedC = new Set(on.map((p) => p.color)),
-      free = CHARS.map((_, i) => i).filter((i) => !used.has(i));
-    return this.db.set('rooms/' + code + '/players/' + this.state.uid, {
+      free = CHARS.map((_, i) => i).filter((i) => !used.has(i)),
+      now = this.now();
+    return {
       name: this.state.name.trim().slice(0, 16),
       char: free.length ? pick(free) : 0,
+      charAt: now,
       color: COLORS.find((x) => !usedC.has(x)) || pick(COLORS),
-      joinedAt: this.now(),
+      joinedAt: now,
       online: true,
-    });
+    };
   }
 
   private enterRoom(code: string) {
@@ -676,16 +778,22 @@ export class GameController {
     this.save('hmo-name', this.state.name.trim());
     if (this.unwatch) this.unwatch();
     this.seenEv = new Set();
-    this.onceKeys = {};
     this.code = code;
     this.mine = null;
-    this.setState({ screen: 'room', code, busy: false, err: '', room: null, myPick: null, votes: { best: null, unh: null }, floaters: [] });
+    this.beatAt = 0;
+    this.setState({ screen: 'room', code, busy: false, err: '', joinNote: '', room: null, myPick: null, votes: { best: null, unh: null }, floaters: [] });
     if (this.stopPresence) this.stopPresence();
     this.stopPresence = this.db.presence(this.rp('players/' + this.state.uid + '/online'));
-    this.unwatch = this.db.watch('rooms/' + code, (room) => this.onRoom(room as Room | null));
+    this.unwatch = this.db.watch(
+      'rooms/' + code,
+      (room) => this.onRoom(room as Room | null),
+      (e) => this.leave('Could not open that room (' + errMsg(e) + ').', true),
+    );
   }
 
   leave(msg = '', roomGone = false) {
+    // Keep the code in the box, so getting back in is one tap (your seat is kept).
+    const again = roomGone ? this.state.codeInput : this.code || this.state.codeInput;
     if (this.stopPresence) this.stopPresence();
     this.stopPresence = null;
     if (!roomGone && this.code && this.state.uid && this.state.room) void this.db.set(this.rp('players/' + this.state.uid + '/online'), false);
@@ -699,7 +807,7 @@ export class GameController {
     this.dragging = false;
     this.resizing = null;
     this.rotating = null;
-    this.setState({ screen: 'join', room: null, code: '', myPick: null, err: msg, busy: false });
+    this.setState({ screen: 'join', room: null, code: '', codeInput: again, myPick: null, err: msg, busy: false });
   }
 
   // ---- room updates ---------------------------------------------------------
@@ -727,6 +835,7 @@ export class GameController {
         this.mine = null;
         patch.linkVal = '';
         patch.imgErr = false;
+        patch.fileErr = false;
       }
       if (ph === 'vote' || ph === 'lobby') patch.votes = { best: null, unh: null };
       if (ph === 'lobby') {
@@ -794,31 +903,15 @@ export class GameController {
       up = (o: Record<string, unknown>) => void this.db.update(this.rp(), o),
       ids = hi.active.map((p) => p.uid),
       all = (f: (id: string) => unknown) => ids.length > 0 && ids.every(f);
-    if (m.host !== hi.host) up({ 'meta/host': hi.host });
-    if ((m.phase || 'lobby') === 'lobby') {
-      // Two people grabbed the same character or color at once: give the later one another.
-      const usedK = new Set<number | undefined>(),
-        usedC = new Set<string | undefined>(),
-        u: Record<string, unknown> = {};
-      for (const p of hi.active) {
-        if (usedK.has(p.char)) {
-          const f = CHARS.map((_, i) => i).find((i) => !usedK.has(i) && !hi.active.some((q) => q.char === i));
-          if (f != null) {
-            u['players/' + p.uid + '/char'] = f;
-            usedK.add(f);
-          }
-        } else usedK.add(p.char);
-        if (usedC.has(p.color)) {
-          const c = COLORS.find((x) => !usedC.has(x) && !hi.active.some((q) => q.color === x));
-          if (c) {
-            u['players/' + p.uid + '/color'] = c;
-            usedC.add(c);
-          }
-        } else usedC.add(p.color);
-      }
-      if (Object.keys(u).length) up(u);
-      return;
+    const u: Record<string, unknown> = this.dedupeSeats(hi.active);
+    if (m.host !== hi.host) u['meta/host'] = hi.host;
+    // Heartbeat, so everyone can tell my screen is still awake.
+    if (m.host !== hi.host || now - this.beatAt >= HOST_BEAT_MS) {
+      this.beatAt = now;
+      u['meta/hb'] = now;
     }
+    if (Object.keys(u).length) up(u);
+    if ((m.phase || 'lobby') === 'lobby') return;
     if (m.phase === 'theme') {
       const st = m.themeStage;
       if (st === 'suggest') {
@@ -859,7 +952,63 @@ export class GameController {
     }
     if (m.phase === 'vote') {
       const vs = room.votes || {};
-      if (all((id) => vs[id])) this.tallyVotes();
+      // Someone whose own pick is the only one shown has nothing to vote on, so nobody waits for them.
+      if (all((id) => vs[id] || !this.hasVoteCards(id, room))) this.tallyVotes();
+    }
+  }
+
+  /**
+   * Two players on one character or color (picked at the same moment, or someone came back and found theirs taken):
+   * the most recent character choice keeps it and the other gets a free one; for colors, whoever joined first keeps it.
+   */
+  private dedupeSeats(active: (PlayerRec & { uid: string })[]) {
+    const u: Record<string, unknown> = {},
+      usedK = new Set<number | undefined>(),
+      usedC = new Set<string | undefined>(),
+      newestFirst = [...active].sort((a, b) => (b.charAt ?? b.joinedAt ?? 0) - (a.charAt ?? a.joinedAt ?? 0) || (a.uid < b.uid ? -1 : 1));
+    for (const p of newestFirst) {
+      if (!usedK.has(p.char)) {
+        usedK.add(p.char);
+        continue;
+      }
+      const f = CHARS.map((_, i) => i).find((i) => !usedK.has(i) && !active.some((q) => q.char === i));
+      if (f != null) {
+        u['players/' + p.uid + '/char'] = f;
+        usedK.add(f);
+      }
+    }
+    for (const p of active) {
+      if (!usedC.has(p.color)) {
+        usedC.add(p.color);
+        continue;
+      }
+      const c = COLORS.find((x) => !usedC.has(x) && !active.some((q) => q.color === x));
+      if (c) {
+        u['players/' + p.uid + '/color'] = c;
+        usedC.add(c);
+      }
+    }
+    return u;
+  }
+  /** Whether `uid` has anything to vote on: some revealed pick that isn't theirs. */
+  private hasVoteCards(uid: string, room: Room | null = this.state.room) {
+    return asArr(room?.meta?.order).some((o) => o !== uid);
+  }
+
+  /**
+   * Moves the room on with a transaction on its meta, so if two players act as host at the same moment
+   * only one of them does it. `fn` returns the new meta, or undefined if the room has already moved on.
+   */
+  private async metaTx(key: string, fn: (m: Meta) => Meta | undefined): Promise<boolean> {
+    if (this.inflight.has(key) || !this.net) return false;
+    this.inflight.add(key);
+    try {
+      const r = await this.net.tx(this.rp('meta'), (cur) => (cur ? fn(cur as Meta) : undefined));
+      return r.committed;
+    } catch {
+      return false;
+    } finally {
+      this.inflight.delete(key);
     }
   }
 
@@ -868,7 +1017,7 @@ export class GameController {
   pickChar(ci: number) {
     const v = this.view();
     if (v.screen !== 'lobby' || !CHARS[ci] || v.players.some((p) => p.id !== 'me' && p.online && p.char === ci)) return;
-    void this.db.set(this.rp('players/' + this.state.uid + '/char'), ci);
+    void this.db.update(this.rp('players/' + this.state.uid), { char: ci, charAt: this.now() });
   }
   setThemeMode(k: ThemeMode) {
     if (this.amHost() && this.view().screen === 'lobby') void this.db.set(this.rp('meta/themeMode'), k);
@@ -879,14 +1028,19 @@ export class GameController {
   startGame() {
     const v = this.view();
     if (v.screen !== 'lobby' || !this.amHost() || v.players.filter((p) => p.online).length < MINP) return;
+    const t = cleanTheme(v.themeAgreed);
+    if (v.themeMode === 'agreed' && !t) return;
+    // A fresh heartbeat goes out with the start, so nobody mistakes a host who was away in the lobby for one who left.
+    this.beatAt = this.now();
+    // Clear the last cake now, while nobody can be decorating yet.
+    const freshCake = { 'meta/hb': this.beatAt, cake: null, cakeBy: null, toppings: null, strokes: null, log: null, decoReady: null };
     if (v.themeMode === 'agreed') {
-      const t = cleanTheme(v.themeAgreed);
-      if (!t) return;
-      void this.db.update(this.rp(), { 'meta/cakeTheme': t, 'meta/themeResult': null, 'meta/themeStage': null });
-      this.startDecorate();
+      void this.db.update(this.rp(), freshCake);
+      this.startDecorate(t);
       return;
     }
     void this.db.update(this.rp(), {
+      ...freshCake,
       'meta/phase': 'theme',
       'meta/themeStage': 'suggest',
       'meta/sugDoneAt': null,
@@ -928,13 +1082,13 @@ export class GameController {
     return [...m.values()];
   }
   private startThemeVote() {
-    if (!this.once('tv')) return;
     // Everyone suggested the same thing: no need to vote.
     if (this.themeOpts().length < 2) {
       this.finishTheme();
       return;
     }
-    void this.db.update(this.rp(), { 'meta/themeStage': 'vote', 'meta/voteDoneAt': null, themeVotes: null });
+    // Votes were cleared when the theme step started, so only the stage changes here.
+    void this.metaTx('tv', (m) => (m.phase === 'theme' && m.themeStage === 'suggest' ? { ...m, themeStage: 'vote', voteDoneAt: null } : undefined));
   }
   /** Vote for an idea (null = abstain, when every idea is mine). You can't vote for your own. */
   castThemeVote(key: string | null) {
@@ -947,36 +1101,31 @@ export class GameController {
     void this.db.set(this.rp('themeVotes/' + this.state.uid), key == null ? '' : key);
   }
   private finishTheme() {
-    if (!this.once('tf')) return;
     const v = this.view(),
       opts = this.themeOpts(v);
     if (!opts.length) return;
     const tally = (k: string) => Object.values(v.themeVotes).filter((x) => x === k).length,
       top = Math.max(...opts.map((o) => tally(o.key))),
       best = opts.filter((o) => tally(o.key) === top),
-      w = pick(best);
-    void this.db.update(this.rp(), {
-      'meta/themeStage': 'result',
-      'meta/cakeTheme': w.text,
-      'meta/themeResult': { text: w.text, by: w.by.map((id) => this.uidOf(id)), votes: top, tie: best.length > 1, consensus: opts.length === 1 },
-      'meta/themeGoAt': this.now() + 3000,
-    });
+      w = pick(best),
+      result = { text: w.text, by: w.by.map((id) => this.uidOf(id)), votes: top, tie: best.length > 1, consensus: opts.length === 1 };
+    void this.metaTx('tf', (m) =>
+      m.phase === 'theme' && (m.themeStage === 'suggest' || m.themeStage === 'vote')
+        ? { ...m, themeStage: 'result', cakeTheme: w.text, themeResult: result, themeGoAt: this.now() + 3000 }
+        : undefined,
+    );
   }
 
   // ---- decorate -------------------------------------------------------------
 
-  private startDecorate() {
-    if (!this.once('dec')) return;
-    void this.db.update(this.rp(), {
-      'meta/phase': 'decorate',
-      'meta/decoGoAt': null,
-      'meta/themeGoAt': null,
-      cake: newCake(),
-      cakeBy: null,
-      toppings: null,
-      strokes: null,
-      log: null,
-      decoReady: null,
+  /** From the theme result, or straight from the lobby with the theme everyone already agreed on. */
+  private startDecorate(agreedTheme?: string) {
+    void this.metaTx('dec', (m) => {
+      if (agreedTheme != null)
+        return (m.phase || 'lobby') === 'lobby'
+          ? { ...m, phase: 'decorate', cakeTheme: agreedTheme, themeResult: null, themeStage: null, decoGoAt: null, themeGoAt: null, hb: this.beatAt || this.now() }
+          : undefined;
+      return m.phase === 'theme' && m.themeStage === 'result' ? { ...m, phase: 'decorate', decoGoAt: null, themeGoAt: null } : undefined;
     });
   }
   private addLog(text: string) {
@@ -1060,7 +1209,6 @@ export class GameController {
   // ---- pick -----------------------------------------------------------------
 
   private startPicks() {
-    if (!this.once('picks')) return;
     const hi = this.hostInfo(),
       ps = hi.active.map((p) => ({ id: p.uid })),
       lay = layoutPicks(ps) || {},
@@ -1073,20 +1221,16 @@ export class GameController {
         moving: false,
       };
     });
-    void this.db.update(this.rp(), {
-      'meta/phase': 'submit',
-      'meta/decoGoAt': null,
-      'meta/slots': Object.values(lay),
-      'meta/curtainAt': null,
-      'meta/order': null,
-      'meta/idx': 0,
-      'meta/part': 0,
-      picks,
-      ready: null,
-      revealOk: null,
-      reacts: null,
-      reactEvents: null,
-      votes: null,
+    void this.metaTx('picks', (m) =>
+      m.phase === 'decorate' && m.decoGoAt && this.now() >= m.decoGoAt
+        ? { ...m, phase: 'submit', decoGoAt: null, slots: Object.values(lay), curtainAt: null, order: null, idx: 0, part: 0 }
+        : undefined,
+    ).then((ok) => {
+      if (!ok) return;
+      const u: Record<string, unknown> = { ready: null, revealOk: null, reacts: null, reactEvents: null, votes: null };
+      // Field by field, so a picture someone has already added isn't wiped.
+      for (const [id, p] of Object.entries(picks)) for (const [k, x] of Object.entries(p)) u['picks/' + id + '/' + k] = x;
+      void this.db.update(this.rp(), u);
     });
   }
   /** Change my pick locally right away; the room hears about it at most every 120ms. */
@@ -1110,15 +1254,21 @@ export class GameController {
   setImg(src: string) {
     this.updMine({ img: src });
     void this.db.set(this.rp('picks/' + this.state.uid + '/img'), src);
-    this.setState({ imgErr: false });
+    this.setState({ imgErr: false, fileErr: false });
     this.env.probeImage(src, () => {
       if ((this.mine || {}).img === src) this.setState({ imgErr: true });
     });
   }
   /** Use a picture file (upload, drop or paste), shrunk first so it sends fast. */
   readFile(f: File | null | undefined) {
-    if (!f || !f.type || !f.type.startsWith('image/')) return;
-    this.setState({ hint: 'Shrinking your picture…' });
+    if (!f) return;
+    // A file that says it isn't a picture: tell the player instead of quietly ignoring it.
+    // (No type at all can still be a picture, so that one gets a try.)
+    if (f.type && !f.type.startsWith('image/')) {
+      this.setState({ fileErr: true });
+      return;
+    }
+    this.setState({ hint: 'Shrinking your picture…', fileErr: false });
     void shrinkImage(f).then((d) => {
       this.setState({ hint: '' });
       if (d) this.setImg(d);
@@ -1166,12 +1316,14 @@ export class GameController {
   lockIn() {
     const v = this.view(),
       me = v.picks.me;
-    if (!me || !me.img || this.state.imgErr) return;
+    if (v.screen !== 'submit' || v.curtain || !me || !me.img || this.state.imgErr) return;
     this.settleMine();
     void this.db.set(this.rp('ready/' + this.state.uid), true);
   }
-  /** Undoing the lock-in also takes back my OK for the reveal. */
+  /** Undoing the lock-in also takes back my OK for the reveal. Not once the curtains have started closing. */
   unlock() {
+    const v = this.view();
+    if (v.screen !== 'submit' || v.curtain) return;
     void this.db.update(this.rp(), { ['ready/' + this.state.uid]: null, ['revealOk/' + this.state.uid]: null });
   }
   /** Say I'm ready (or not yet) for the reveal. Only once my pick is locked in. */
@@ -1274,11 +1426,7 @@ export class GameController {
     if (v.screen !== 'submit' || v.curtain || !this.allRevealOk(v)) return;
     const R = this.state.room!;
     const order = shuffle(Object.keys(R.ready || {}).filter((id) => (R.picks || {})[id] && (R.players || {})[id]));
-    void this.db.tx(this.rp('meta'), (cur) => {
-      const m = cur as Room['meta'];
-      if (!m || m.phase !== 'submit' || m.curtainAt) return undefined;
-      return { ...m, phase: 'reveal', order, idx: 0, part: 0, curtainAt: this.now() };
-    });
+    void this.metaTx('reveal', (m) => (m.phase === 'submit' && !m.curtainAt ? { ...m, phase: 'reveal', order, idx: 0, part: 0, curtainAt: this.now() } : undefined));
   }
   /** A pick is shown in parts: picture, name, then each line of the defense. */
   partsOfUid(uid: string) {
@@ -1337,27 +1485,43 @@ export class GameController {
 
   // ---- vote & results -------------------------------------------------------
 
+  /** Pick my Best / Most unhinged. Locked once my votes are in. */
   chooseVote(kind: 'best' | 'unh', id: string) {
+    const v = this.view();
+    if (v.screen !== 'vote' || v.hasVoted) return;
     this.setState((st) => ({ votes: { ...st.votes, [kind]: id } }));
   }
   submitVotes() {
     const v = this.state.votes;
-    if (!v.best || !v.unh) return;
+    if (!v.best || !v.unh || this.view().hasVoted) return;
     void this.db.set(this.rp('votes/' + this.state.uid), { best: this.uidOf(v.best), unh: this.uidOf(v.unh) });
   }
   private tallyVotes() {
-    if (!this.once('tally')) return;
     const room = this.state.room!,
       t: Record<'best' | 'unh', Record<string, number>> = { best: {}, unh: {} };
     for (const x of Object.values(room.votes || {})) {
       if (x.best) t.best[x.best] = (t.best[x.best] || 0) + 1;
       if (x.unh) t.unh[x.unh] = (t.unh[x.unh] || 0) + 1;
     }
-    const top = (c: 'best' | 'unh') => Object.entries(t[c]).sort((a, b) => b[1] - a[1])[0] || null;
-    void this.db.update(this.rp(), { 'meta/phase': 'results', 'meta/results': { best: top('best'), unh: top('unh') }, 'meta/finishedAt': this.now() });
+    // Most votes wins. A tie is broken at random among the tied picks (like the theme vote), and flagged so it can say so.
+    const top = (c: 'best' | 'unh') => {
+      const e = Object.entries(t[c]);
+      if (!e.length) return { award: null, tie: false };
+      const most = Math.max(...e.map(([, n]) => n)),
+        tied = e.filter(([, n]) => n === most);
+      return { award: [pick(tied)[0], most] as Award, tie: tied.length > 1 };
+    };
+    const b = top('best'),
+      h = top('unh');
+    void this.metaTx('tally', (m) =>
+      m.phase === 'vote'
+        ? { ...m, phase: 'results', results: { best: b.award, unh: h.award, bestTie: b.tie, unhTie: h.tie }, finishedAt: this.now() }
+        : undefined,
+    );
   }
   /** Back to the lobby for another round with the same people. */
   playAgain() {
+    if (this.view().screen !== 'results') return;
     const m = this.state.room?.meta || {};
     this.myHist = [];
     void this.db.update(this.rp(), {

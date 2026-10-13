@@ -77,7 +77,12 @@ export function SubmitPanel({ vm }: { vm: ViewModel['submit'] }) {
           </div>
           {vm.imgErr && (
             <div className="err" role="alert">
-              That image didn't load. Try another link or upload the file.
+              That image did not load. Try another link or upload the file.
+            </div>
+          )}
+          {vm.fileErr && (
+            <div className="err" role="alert">
+              That file is not a picture. Try a photo or an image file.
             </div>
           )}
           <div className="row-8 stretch">
@@ -134,7 +139,7 @@ export function SubmitPanel({ vm }: { vm: ViewModel['submit'] }) {
         </Banner>
       ) : (
         <button type="button" className="btn btn-big btn-blue" onClick={vm.okReveal} disabled={vm.cantOkReveal} style={{ opacity: vm.okRevealOpacity }}>
-          I'm ready for the reveal
+          I am ready for the reveal
         </button>
       )}
     </div>

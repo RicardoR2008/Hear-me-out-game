@@ -4,6 +4,7 @@ export function ResultsPanel({ vm }: { vm: ViewModel['results'] }) {
   return (
     <div className="stack-18">
       <h2 className="head-title-done">The cake is done.</h2>
+      {vm.noWinners && <div className="muted-14">{vm.noWinners}</div>}
       {vm.winners.map((w) => (
         <div key={w.key} className="winner">
           <div className="winner-thumb">{w.hasImg && <div className="img-cover" style={{ backgroundImage: w.bg, transform: w.flipT }} />}</div>

@@ -43,7 +43,7 @@ export function ThemeScreen({ vm }: { vm: ViewModel['themeStep'] }) {
           <>
             <div className="head">
               <h2 className="head-title-xl">Vote for the theme</h2>
-              <div className="head-sub">You can't vote for your own idea.</div>
+              <div className="head-sub">You cannot vote for your own idea.</div>
             </div>
             <div className="idea-list">
               {vm.optCards.map((o) => (

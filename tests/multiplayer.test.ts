@@ -341,7 +341,7 @@ describe('multiplayer', () => {
     await w.run(3000);
     if (cs.some((k) => k.S().screen !== 'submit' || k.S().curtain)) f.push('reveal started without everyone');
     if (statuses() !== 'Ready,Ready,Locked in') f.push('statuses with two ready: ' + statuses());
-    if (cs[0].V().submit.revealWaitText !== "You're ready. Waiting for P2.") f.push('wait text: ' + cs[0].V().submit.revealWaitText);
+    if (cs[0].V().submit.revealWaitText !== 'You are ready. Waiting for P2.') f.push('wait text: ' + cs[0].V().submit.revealWaitText);
     if (!cs[0].V().submit.revealOkMe || cs[2].V().submit.revealOkMe) f.push('revealOkMe flags wrong');
     // "Not yet" and "Undo lock-in" both take the OK back.
     cs[1].c.setRevealOk(false);

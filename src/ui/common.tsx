@@ -31,11 +31,11 @@ export function DayNight({ toggle }: { toggle: ViewModel['toggle'] }) {
   );
 }
 
-/** "Who's ready" card: one row per player with their status. */
+/** "Who is ready" card: one row per player with their status. */
 export function ReadyPanel({ rows }: { rows: ReadyRow[] }) {
   return (
     <div className="panel">
-      <div className="eyebrow">Who's ready</div>
+      <div className="eyebrow">Who is ready</div>
       {rows.map((p) => (
         <div key={p.key} className="ready-row">
           <div className="avatar avatar-26" style={{ background: p.color }}>
