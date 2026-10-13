@@ -128,9 +128,15 @@ export function SubmitPanel({ vm }: { vm: ViewModel['submit'] }) {
         </Banner>
       )}
       <ReadyPanel rows={vm.readyList} />
-      <button type="button" className="btn btn-big btn-blue" onClick={vm.startReveal} disabled={vm.cantReveal} style={{ opacity: vm.revealOpacity }}>
-        Start the reveal
-      </button>
+      {vm.revealOkMe ? (
+        <Banner tall action="Not yet" onAction={vm.notYet}>
+          <span className="pretty">{vm.revealWaitText}</span>
+        </Banner>
+      ) : (
+        <button type="button" className="btn btn-big btn-blue" onClick={vm.okReveal} disabled={vm.cantOkReveal} style={{ opacity: vm.okRevealOpacity }}>
+          I'm ready for the reveal
+        </button>
+      )}
     </div>
   );
 }

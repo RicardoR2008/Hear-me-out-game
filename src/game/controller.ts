@@ -157,6 +157,8 @@ export interface View extends Omit<LocalState, 'screen'> {
   strokes: ViewStroke[];
   log: ViewLog[];
   decoReady: Record<string, boolean>;
+  /** Who has said they're ready for the reveal (pick screen). */
+  revealOk: Record<string, boolean>;
   themeSugs: Record<string, string>;
   themeVotes: Record<string, string | null>;
   themeMode: ThemeMode;
@@ -435,6 +437,7 @@ export class GameController {
         strokes: [],
         log: [],
         decoReady: {},
+        revealOk: {},
         themeSugs: {},
         themeVotes: {},
         themeMode: 'vote',
@@ -473,9 +476,10 @@ export class GameController {
       const t = now - M.curtainAt,
         c1 = CUR.close,
         c2 = c1 + CUR.count,
-        c3 = c2 + CUR.ring;
-      if (t < c1) curtain = { phase: 'close', n: 5, t };
-      else if (t < c2) curtain = { phase: 'count', n: Math.max(1, 5 - Math.floor((t - c1) / 1000)), t };
+        c3 = c2 + CUR.ring,
+        secs = CUR.count / 1000;
+      if (t < c1) curtain = { phase: 'close', n: secs, t };
+      else if (t < c2) curtain = { phase: 'count', n: Math.max(1, secs - Math.floor((t - c1) / 1000)), t };
       else if (t < c3) curtain = { phase: 'ring', n: 0, t };
       else if (t < CURTAIN_TOTAL) curtain = { phase: 'open', n: 0, t };
     }
@@ -540,6 +544,7 @@ export class GameController {
       strokes,
       log,
       decoReady: mk(R.decoReady),
+      revealOk: mk(R.revealOk),
       themeSugs: mk(R.themeSugs),
       themeVotes: tv,
       themeMode: M.themeMode || 'vote',
@@ -836,6 +841,11 @@ export class GameController {
       else if (ok && m.decoGoAt && now >= m.decoGoAt) this.startPicks();
       return;
     }
+    if (m.phase === 'submit') {
+      // Nobody can start the reveal alone: it begins once everyone has locked in and said they're ready.
+      if (!m.curtainAt && all((id) => (room.ready || {})[id] && (room.revealOk || {})[id])) this.startReveal();
+      return;
+    }
     if (m.phase === 'reveal') {
       if (m.curtainAt && now < m.curtainAt + CURTAIN_TOTAL) return;
       const id = asArr(m.order)[m.idx || 0];
@@ -1073,6 +1083,7 @@ export class GameController {
       'meta/part': 0,
       picks,
       ready: null,
+      revealOk: null,
       reacts: null,
       reactEvents: null,
       votes: null,
@@ -1147,6 +1158,11 @@ export class GameController {
     const on = s.players.filter((p) => p.online);
     return on.length > 0 && on.every((p) => s.ready[p.id]);
   }
+  /** Everyone still here has locked in and said they're ready for the reveal. */
+  allRevealOk(s: View = this.view()) {
+    const on = s.players.filter((p) => p.online);
+    return on.length > 0 && on.every((p) => s.ready[p.id] && s.revealOk[p.id]);
+  }
   lockIn() {
     const v = this.view(),
       me = v.picks.me;
@@ -1154,8 +1170,15 @@ export class GameController {
     this.settleMine();
     void this.db.set(this.rp('ready/' + this.state.uid), true);
   }
+  /** Undoing the lock-in also takes back my OK for the reveal. */
   unlock() {
-    void this.db.remove(this.rp('ready/' + this.state.uid));
+    void this.db.update(this.rp(), { ['ready/' + this.state.uid]: null, ['revealOk/' + this.state.uid]: null });
+  }
+  /** Say I'm ready (or not yet) for the reveal. Only once my pick is locked in. */
+  setRevealOk(on: boolean) {
+    const v = this.view();
+    if (v.screen !== 'submit' || v.curtain || (on && !v.locked)) return;
+    void this.db.set(this.rp('revealOk/' + this.state.uid), on ? true : null);
   }
 
   // Pointer gestures on my pick card (pick screen). `f` is where the card stands.
@@ -1245,9 +1268,10 @@ export class GameController {
 
   // ---- reveal ---------------------------------------------------------------
 
-  startReveal() {
+  /** Close the curtains and start the countdown. The host does this once everyone has said they're ready. */
+  private startReveal() {
     const v = this.view();
-    if (v.screen !== 'submit' || v.curtain || !this.allLocked(v)) return;
+    if (v.screen !== 'submit' || v.curtain || !this.allRevealOk(v)) return;
     const R = this.state.room!;
     const order = shuffle(Object.keys(R.ready || {}).filter((id) => (R.picks || {})[id] && (R.players || {})[id]));
     void this.db.tx(this.rp('meta'), (cur) => {
@@ -1357,6 +1381,7 @@ export class GameController {
       themeVotes: null,
       picks: null,
       ready: null,
+      revealOk: null,
       reacts: null,
       reactEvents: null,
       votes: null,

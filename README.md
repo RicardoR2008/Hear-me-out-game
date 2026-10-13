@@ -73,6 +73,7 @@ Prefer not to use Actions? Run `npm run build` and upload the **contents** of `d
 - One person taps **Create a room** and reads out the 4-letter code. Everyone else types it and taps **Join**. 2–12 players.
 - The first person in is the host and starts the game. If the host leaves, the next person who joined becomes host automatically.
 - Pick a theme (everyone suggests, then votes — or type one you already agreed on), decorate the cake together, then secretly pick your hear me out and stick it on the cake.
+- When your pick is set, tap **Lock it in**, then **I'm ready for the reveal**. Nobody can start the reveal alone: once everyone still in the room is ready, the curtains close for a 3-second countdown. Tap **Not yet** (or **Undo lock-in**) to take your OK back.
 - Reveals happen one at a time: the owner shows the picture, then the name, then each line of their defense. Everyone else reacts.
 - Vote for Best and Most unhinged, then save a keepsake page of the finished cake.
 - Refreshing or losing signal is fine: open the link again and you're put back in your seat.

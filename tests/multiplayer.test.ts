@@ -316,6 +316,74 @@ describe('multiplayer', () => {
     expect(f).toEqual([]);
   });
 
+  it('N13 the reveal waits for everyone to say they are ready, then counts down 3 seconds', async () => {
+    const f: string[] = [];
+    const { w, cs } = await setup(3);
+    await playTheme(w, cs, f, 'ok');
+    await playDecorate(w, cs, f, 'ok');
+    for (const k of cs) {
+      k.c.setImg('https://img.test/' + k.uid + '.png');
+      k.c.updMine({ label: 'Pick of ' + k.uid });
+    }
+    await w.run(400);
+    const room = () => w.core.get('rooms/' + cs[0].c.code) as { revealOk?: Record<string, boolean>; meta: { curtainAt?: number } };
+    // Saying "ready" before locking in does nothing.
+    cs[2].c.setRevealOk(true);
+    await w.run(200);
+    if ((room().revealOk || {}).u2) f.push('ready accepted before lock-in');
+    for (const k of cs) k.c.lockIn();
+    await w.run(300);
+    const statuses = () => cs[0].V().submit.readyList.map((r) => r.status).join(',');
+    if (statuses() !== 'Locked in,Locked in,Locked in') f.push('statuses after lock-in: ' + statuses());
+    // Two of three say ready: nothing starts, however long we wait.
+    cs[0].c.setRevealOk(true);
+    cs[1].c.setRevealOk(true);
+    await w.run(3000);
+    if (cs.some((k) => k.S().screen !== 'submit' || k.S().curtain)) f.push('reveal started without everyone');
+    if (statuses() !== 'Ready,Ready,Locked in') f.push('statuses with two ready: ' + statuses());
+    if (cs[0].V().submit.revealWaitText !== "You're ready. Waiting for P2.") f.push('wait text: ' + cs[0].V().submit.revealWaitText);
+    if (!cs[0].V().submit.revealOkMe || cs[2].V().submit.revealOkMe) f.push('revealOkMe flags wrong');
+    // "Not yet" and "Undo lock-in" both take the OK back.
+    cs[1].c.setRevealOk(false);
+    cs[0].c.unlock();
+    await w.run(300);
+    const ok = room().revealOk || {};
+    if (ok.u0 || ok.u1) f.push('OK not taken back: ' + JSON.stringify(ok));
+    cs[0].c.lockIn();
+    await w.run(300);
+    for (const k of cs) k.c.setRevealOk(true);
+    // Once the last one says ready, the curtains close right away and the clock counts 3, 2, 1.
+    if (!(await w.until(() => !!room().meta.curtainAt, 1000, 50))) f.push('reveal did not start after everyone was ready');
+    const t0 = room().meta.curtainAt || w.now;
+    const at = async (ms: number) => {
+      await w.run(Math.max(0, t0 + ms - w.now));
+      const c = cs[1].S().curtain;
+      return c ? c.phase + ':' + c.n : 'none:' + cs[1].S().screen;
+    };
+    const seen = [await at(400), await at(1300), await at(2300), await at(3300), await at(3900), await at(4600), await at(5400)];
+    const want = ['close:3', 'count:3', 'count:2', 'count:1', 'ring:0', 'open:0', 'none:reveal'];
+    if (seen.join() !== want.join()) f.push('curtain timeline ' + seen.join(' ') + ' (want ' + want.join(' ') + ')');
+    if (cs.some((k) => k.S().order.length !== 3)) f.push('order length ' + cs.map((k) => k.S().order.length).join());
+    expect(f).toEqual([]);
+  });
+
+  it('N14 a player who left does not block the reveal', async () => {
+    const f: string[] = [];
+    const { w, cs } = await setup(3);
+    await playTheme(w, cs, f, 'leave');
+    await playDecorate(w, cs, f, 'leave');
+    for (const k of cs) k.c.setImg('https://img.test/' + k.uid + '.png');
+    await w.run(400);
+    cs[2].net.disconnect();
+    await w.run(300);
+    for (const k of cs.slice(0, 2)) k.c.lockIn();
+    await w.run(300);
+    for (const k of cs.slice(0, 2)) k.c.setRevealOk(true);
+    if (!(await w.until(() => cs[0].S().screen === 'reveal' && !cs[0].S().curtain, 8000))) f.push('reveal never started without the leaver');
+    if (cs[0].S().order.length !== 2) f.push('order includes ' + cs[0].S().order.length + ' picks (want 2)');
+    expect(f).toEqual([]);
+  });
+
   it('N12 each award goes to the pick with the most votes', async () => {
     const f: string[] = [];
     const { w, cs } = await setup(4);

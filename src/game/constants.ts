@@ -100,8 +100,8 @@ export const STEPS: { key: string; label: string; color: string }[] = [
   { key: 'results', label: 'Results', color: '#FF6B45' },
 ];
 
-/** Curtain timings (ms): close, five-second countdown, alarm ring, open. */
-export const CUR = { close: 800, count: 5000, ring: 450, open: 950 };
+/** Curtain timings (ms): close, three-second countdown, alarm ring, open. */
+export const CUR = { close: 800, count: 3000, ring: 450, open: 950 };
 /** Time from curtainAt until the curtain overlay is gone. */
 export const CURTAIN_TOTAL = CUR.close + CUR.count + CUR.ring + CUR.open + 60;
 

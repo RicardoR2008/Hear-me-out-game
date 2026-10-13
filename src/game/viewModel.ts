@@ -316,7 +316,11 @@ export function buildViewModel(g: GameController) {
     waitText: decoWaitText,
   };
 
-  const allReady = g.allLocked(s);
+  // Pick screen: lock in, then say you're ready; the reveal starts when everyone has.
+  const lockedIn = (p: ViewPlayer) => (p.id === 'me' ? s.locked : !!s.ready[p.id]);
+  const revealReady = (p: ViewPlayer) => lockedIn(p) && !!s.revealOk[p.id];
+  const okMe = !!s.revealOk.me && s.locked;
+  const notReadyYet = s.players.filter((p) => p.online && p.id !== 'me' && !revealReady(p));
   const submit = {
     hasTheme,
     cakeTheme: s.cakeTheme,
@@ -364,10 +368,17 @@ export function buildViewModel(g: GameController) {
     rotVal: Math.round(me.rot || 0),
     onRot: (v: number) => g.updMine({ rot: v }),
     flipMine: () => g.updMine({ flip: !me.flip }),
-    readyList: s.players.map((p) => row(p, p.id === 'me' ? s.locked : !!s.ready[p.id], 'Picking…', 'Ready')),
-    cantReveal: !allReady,
-    revealOpacity: allReady ? 1 : 0.35,
-    startReveal: () => g.startReveal(),
+    readyList: s.players.map((p) => row(p, revealReady(p), lockedIn(p) ? 'Locked in' : 'Picking…', 'Ready')),
+    revealOkMe: okMe,
+    cantOkReveal: !s.locked,
+    okRevealOpacity: s.locked ? 1 : 0.35,
+    okReveal: () => g.setRevealOk(true),
+    notYet: () => g.setRevealOk(false),
+    revealWaitText: !notReadyYet.length
+      ? "Everyone's ready. The reveal is starting…"
+      : notReadyYet.length <= 3
+        ? "You're ready. Waiting for " + listJoin(notReadyYet.map((p) => p.name)) + '.'
+        : "You're ready. Waiting for " + notReadyYet.length + ' more.',
   };
 
   const r = (curId && s.reacts[curId]) || {};

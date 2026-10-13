@@ -225,7 +225,7 @@ export async function playPick(w: World, cs: Client[], f: string[], tag: string)
     f.push(tag + ': not all locked');
     return false;
   }
-  cs[cs.length - 1].c.startReveal();
+  for (const k of cs) k.c.setRevealOk(true);
   await w.run(50);
   if (!(await w.until(() => cs.every((k) => k.S().screen === 'reveal' && !k.S().curtain), 12000))) {
     f.push(tag + ': reveal never opened');

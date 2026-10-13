@@ -140,7 +140,10 @@ export interface Room {
   log?: Record<string, LogRec>;
   decoReady?: Record<string, boolean>;
   picks?: Record<string, PickRec>;
+  /** Locked in their pick. */
   ready?: Record<string, boolean>;
+  /** Said they're ready for the reveal (after locking in). */
+  revealOk?: Record<string, boolean>;
   reacts?: Record<string, Partial<Record<ReactKey, number>>>;
   reactEvents?: Record<string, ReactEventRec>;
   votes?: Record<string, VoteRec>;
