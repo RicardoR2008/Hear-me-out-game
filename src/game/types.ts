@@ -114,6 +114,8 @@ export interface Meta {
   hb?: number | null;
   phase?: Phase;
   themeMode?: ThemeMode;
+  /** When the countdown to the bakery ends (the host pressed the button and everyone had pressed Start the cake). */
+  startGoAt?: number | null;
   round?: number;
   themeAgreed?: string;
   cakeTheme?: string;
@@ -136,6 +138,8 @@ export interface Meta {
 export interface Room {
   meta?: Meta;
   players?: Record<string, PlayerRec>;
+  /** Pressed Start the cake in the lobby. */
+  startReady?: Record<string, boolean>;
   themeSugs?: Record<string, string>;
   themeVotes?: Record<string, string>;
   cake?: Partial<CakeSpec>;

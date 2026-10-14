@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ViewModel } from '../game/viewModel';
+import { Banner, ReadyPanel } from './common';
 
 /** Link that opens the game with this room's code already filled in. */
 export const inviteLink = (code: string) => location.origin + location.pathname + '?room=' + code;
@@ -115,12 +116,46 @@ export function LobbyScreen({ vm }: { vm: ViewModel['lobby'] }) {
         )}
         <div className="muted-14">{vm.themeModeNote}</div>
       </div>
+      {/* Everyone presses Start the cake; then the host takes them all to the bakery. */}
       <div className="lobby-start">
-        <button type="button" className="btn btn-big btn-green btn-start" onClick={vm.start} disabled={vm.cantStart} style={{ opacity: vm.startOpacity }}>
-          Start the cake
-        </button>
+        <ReadyPanel rows={vm.readyList} />
+        {vm.meStarted ? (
+          <Banner tall action="Not yet" onAction={vm.notYet}>
+            <span className="pretty">{vm.startWait}</span>
+          </Banner>
+        ) : (
+          <button type="button" className="btn btn-big btn-green btn-start" onClick={vm.pressStart}>
+            Start the cake
+          </button>
+        )}
+        {vm.isHost && (
+          <>
+            <button type="button" className="btn btn-big btn-pink btn-bakery" onClick={vm.goToBakery} disabled={vm.cantGo} style={{ opacity: vm.goOpacity }}>
+              Let us take them to the bakery!
+            </button>
+            {vm.goHint && (
+              <div className="go-hint" role="status">
+                {vm.goHint}
+              </div>
+            )}
+          </>
+        )}
         <div className="muted-13">{vm.note}</div>
       </div>
+      {vm.countdown != null && (
+        <div className="bakery-overlay" role="dialog" aria-modal="true" aria-label="Off to the bakery">
+          <div className="bakery-card">
+            <div className="bakery-title">Off to the bakery!</div>
+            <div key={vm.countdown} className="bakery-num" aria-live="assertive">
+              {vm.countdown}
+            </div>
+            <div className="bakery-text">Not ready? Tap Not yet to stop the countdown.</div>
+            <button type="button" className="btn btn-big btn-plain btn-bakery-back" onClick={vm.notYet}>
+              Not yet
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

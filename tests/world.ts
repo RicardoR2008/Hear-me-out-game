@@ -166,10 +166,16 @@ export function polyOverlap(A: number[][], B: number[][]) {
 
 // ---- play-through helpers. Each pushes a message to `f` and returns false if the game got stuck.
 
-export async function playTheme(w: World, cs: Client[], f: string[], tag: string) {
-  const host = cs.find((k) => k.S().isHost)!;
-  host.c.startGame();
+/** Everyone presses Start the cake, the host takes them to the bakery, and the 3-second countdown runs out. */
+export async function startCake(w: World, cs: Client[]) {
+  cs.forEach((k) => k.c.setStartReady(true));
   await w.run(100);
+  cs.find((k) => k.S().isHost)!.c.goToBakery();
+  await w.run(3200);
+}
+
+export async function playTheme(w: World, cs: Client[], f: string[], tag: string) {
+  await startCake(w, cs);
   if (!allSee(cs, 'theme')) {
     f.push(tag + ': not everyone on theme screen');
     return false;

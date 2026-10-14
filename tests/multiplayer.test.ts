@@ -1,7 +1,7 @@
 // Whole games with several players, ported from the design's net-harness checks (N1–N11).
 import { describe, expect, it, vi } from 'vitest';
 import type { Room } from '../src/game/types';
-import { World, allSee, client, playDecorate, playPick, playReveal, playTheme, playVote, polyOverlap, rectPoly, setup } from './world';
+import { World, allSee, client, playDecorate, playPick, playReveal, playTheme, playVote, polyOverlap, rectPoly, setup, startCake } from './world';
 
 describe('multiplayer', () => {
   it.each([2, 3, 6, 12])('N1 a full game with %i players stays in sync', async (n) => {
@@ -97,8 +97,7 @@ describe('multiplayer', () => {
     const late = client(w, 'late');
     await w.run(50);
     late.c.setState({ name: 'Late', codeInput: code });
-    cs[0].c.startGame();
-    await w.run(200);
+    await startCake(w, cs);
     await late.c.joinRoom();
     await w.run(100);
     if (late.S().screen !== 'join' || !/already started/.test(late.c.state.err)) f.push('late joiner got in: ' + late.S().screen + ' "' + late.c.state.err + '"');
@@ -116,9 +115,11 @@ describe('multiplayer', () => {
     if (!/full/.test(extra.c.state.err)) f.push('13th player msg "' + extra.c.state.err + '"');
 
     const { w: w3, cs: c3 } = await setup(2);
-    c3[1].c.startGame();
-    await w3.run(200);
-    if (c3[1].S().screen !== 'lobby') f.push('non-host could start');
+    c3.forEach((k) => k.c.setStartReady(true));
+    await w3.run(100);
+    c3[1].c.goToBakery();
+    await w3.run(3500);
+    if (c3[1].S().screen !== 'lobby' || c3[0].S().startGo !== null) f.push('non-host could start');
     expect(f).toEqual([]);
   });
 

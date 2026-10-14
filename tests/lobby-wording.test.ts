@@ -58,14 +58,14 @@ describe('lobby and wording', () => {
     const { w, cs } = await setup(3);
     const h = cs[0].V().lobby,
       p = cs[1].V().lobby;
-    expect([h.role.host, h.role.title, h.role.text, h.role.icon]).toEqual([true, 'You are the host', 'You start the game when everyone is here.', '👑']);
-    expect([p.role.host, p.role.title, p.role.text]).toEqual([false, 'You are a player', 'P0 is the host and will start the game.']);
-    expect([h.note, p.note]).toEqual(['3 of 12 players.', '3 of 12 players. Only the host can start the game.']);
+    expect([h.role.host, h.role.title, h.role.text, h.role.icon]).toEqual([true, 'You are the host', 'When everyone has pressed Start the cake, you take them to the bakery.', '👑']);
+    expect([p.role.host, p.role.title, p.role.text]).toEqual([false, 'You are a player', 'P0 is the host. Press Start the cake when you are ready.']);
+    expect([h.note, p.note]).toEqual(['3 of 12 players.', '3 of 12 players.']);
     // The host leaves: the next player's card now says they are the host.
     cs[0].c.leave();
     await w.run(600);
     expect(cs[1].V().lobby.role.title).toBe('You are the host');
-    expect(cs[2].V().lobby.role.text).toBe('P1 is the host and will start the game.');
+    expect(cs[2].V().lobby.role.text).toBe('P1 is the host. Press Start the cake when you are ready.');
   });
 
   it('R2 the header puts a crown on the host, and only on the host, for everyone', async () => {

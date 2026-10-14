@@ -498,7 +498,12 @@ export function buildViewModel(g: GameController) {
   // ---- lobby & theme ----------------------------------------------------------
   const online = s.players.filter((p) => p.online).length;
   const agreedOk = !!cleanTheme(s.themeAgreed);
-  const cantStart = !s.isHost || online < MINP || (s.themeMode === 'agreed' && !agreedOk);
+  // Everyone presses Start the cake. Then the host takes them to the bakery: a 3-second countdown, and the game starts.
+  const notStarted = s.players.filter((p) => p.online && !s.startReady[p.id]);
+  const themeReady = s.themeMode !== 'agreed' || agreedOk;
+  const cantGo = !s.isHost || online < MINP || notStarted.length > 0 || !themeReady || s.startGo != null;
+  const whoList = (ps: ViewPlayer[]) => (ps.length <= 3 ? listJoin(ps.map((p) => (p.id === 'me' ? 'you' : p.name))) : ps.length + ' more players');
+  const hostCalled = s.hostName || 'the host';
   const lobby = {
     code: s.code,
     isHost: s.isHost,
@@ -547,20 +552,47 @@ export function buildViewModel(g: GameController) {
           ? 'Everyone decorates and picks for this theme.'
           : 'Type the theme you all agreed on to start.'
         : 'Everyone suggests a theme, then you all vote.',
-    start: () => g.startGame(),
-    cantStart,
-    startOpacity: cantStart ? 0.4 : 1,
-    // Who is host is shown big at the top of the lobby (role); this line under the Start button is only a reminder.
-    note:
-      (online < MINP ? 'Need at least ' + MINP + ' players. Share the code ' + s.code + '.' : online + ' of ' + MAXP + ' players.') +
-      (s.isHost ? '' : ' Only the host can start the game.'),
+    /** "Who is ready": everyone, the host too, sees who has pressed Start the cake. */
+    readyList: s.players.map((p) => row(p, !!s.startReady[p.id], 'Not ready', 'Ready')),
+    meStarted: !!s.startReady.me,
+    pressStart: () => g.setStartReady(true),
+    notYet: () => g.setStartReady(false),
+    startWait:
+      online < MINP
+        ? 'You are ready. Waiting for more players to join.'
+        : notStarted.length
+          ? 'You are ready. Waiting for ' + whoList(notStarted) + '.'
+          : !themeReady
+            ? s.isHost
+              ? 'Everyone is ready. Type the theme you all agreed on.'
+              : 'Everyone is ready. Waiting for ' + hostCalled + ' to type the theme.'
+            : s.isHost
+              ? 'Everyone is ready. Take them to the bakery!'
+              : 'Everyone is ready. Waiting for ' + hostCalled + ' to take you to the bakery.',
+    // Only the host has this button. It works once everyone has pressed Start the cake, and says who it is waiting for.
+    goToBakery: () => g.goToBakery(),
+    cantGo,
+    goOpacity: cantGo ? 0.4 : 1,
+    goHint:
+      !s.isHost || s.startGo != null
+        ? ''
+        : online < MINP
+          ? 'You need at least ' + MINP + ' players.'
+          : notStarted.length
+            ? 'Waiting for ' + whoList(notStarted) + ' to press Start the cake.'
+            : !themeReady
+              ? 'Type the theme you all agreed on first.'
+              : '',
+    /** Seconds left before the game starts, shown big on every screen; null when no countdown is running. */
+    countdown: s.startGo,
+    note: online < MINP ? 'Need at least ' + MINP + ' players. Share the code ' + s.code + '.' : online + ' of ' + MAXP + ' players.',
     role: s.isHost
-      ? { host: true, icon: '👑', title: 'You are the host', text: 'You start the game when everyone is here.' }
+      ? { host: true, icon: '👑', title: 'You are the host', text: 'When everyone has pressed Start the cake, you take them to the bakery.' }
       : {
           host: false,
           icon: EMO.me || '🙂',
           title: 'You are a player',
-          text: (s.hostName ? s.hostName + ' is the host and' : 'The host') + ' will start the game.',
+          text: (s.hostName ? s.hostName + ' is the host. ' : '') + 'Press Start the cake when you are ready.',
         },
   };
 
@@ -618,7 +650,9 @@ export function buildViewModel(g: GameController) {
       op: p.online ? 1 : 0.35,
       /** The host wears a crown in the header on every screen. */
       host: p.host,
-      title: p.name + (p.host ? ' (host)' : '') + (p.online ? '' : ' (away)'),
+      /** In the lobby, a check mark shows who has pressed Start the cake. */
+      ready: s.screen === 'lobby' && p.online && !!s.startReady[p.id],
+      title: p.name + (p.host ? ' (host)' : '') + (p.online ? '' : ' (away)') + (s.screen === 'lobby' && p.online && s.startReady[p.id] ? ' (ready)' : ''),
     })),
     steps: STEPS.map((x, i) => ({
       key: x.key,

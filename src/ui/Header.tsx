@@ -21,6 +21,11 @@ export function Header({ vm, toggle }: { vm: ViewModel['header']; toggle: ViewMo
               <div className="hdr-avatar" style={{ background: p.color }}>
                 {p.emoji}
               </div>
+              {p.ready && (
+                <span className="hdr-ready" role="img" aria-label="Ready">
+                  ✓
+                </span>
+              )}
               <div className="hdr-plate" style={{ background: p.plateBg }}>
                 {p.name}
               </div>

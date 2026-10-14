@@ -118,3 +118,5 @@ export const HOST_BEAT_MS = 2000;
 export const HOST_STALE_MS = 8000;
 /** Create/Join pressed before the connection is ready waits this long before giving up. */
 export const CONNECT_WAIT_MS = 15000;
+/** The countdown on every screen after the host takes everyone to the bakery, before the game starts. */
+export const START_GO_MS = 3000;

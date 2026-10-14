@@ -18,6 +18,7 @@ import {
   ROOM_CODE_LETTERS,
   ROOM_MAX_AGE_MS,
   SP,
+  START_GO_MS,
   STRIPES,
   newCake,
 } from './constants';
@@ -193,6 +194,10 @@ export interface View extends Omit<LocalState, 'screen'> {
   themeVotes: Record<string, string | null>;
   themeMode: ThemeMode;
   themeAgreed: string;
+  /** Who has pressed Start the cake (lobby). */
+  startReady: Record<string, boolean>;
+  /** Seconds left in the countdown to the bakery, or null when none is running. */
+  startGo: number | null;
   cakeTheme: string;
   themeStage: ThemeStage | null;
   themeResult: ThemeResultView | null;
@@ -525,6 +530,8 @@ export class GameController {
         themeVotes: {},
         themeMode: 'vote',
         themeAgreed: '',
+        startReady: {},
+        startGo: null,
         cakeTheme: '',
         themeStage: null,
         themeResult: null,
@@ -632,6 +639,8 @@ export class GameController {
       themeVotes: tv,
       themeMode: M.themeMode || 'vote',
       themeAgreed: M.themeAgreed || '',
+      startReady: mk(R.startReady),
+      startGo: M.startGoAt ? Math.max(1, Math.ceil((M.startGoAt - now) / 1000)) : null,
       cakeTheme: M.cakeTheme || '',
       themeStage: M.themeStage || null,
       themeResult: TR,
@@ -796,7 +805,11 @@ export class GameController {
     const again = roomGone ? this.state.codeInput : this.code || this.state.codeInput;
     if (this.stopPresence) this.stopPresence();
     this.stopPresence = null;
-    if (!roomGone && this.code && this.state.uid && this.state.room) void this.db.set(this.rp('players/' + this.state.uid + '/online'), false);
+    if (!roomGone && this.code && this.state.uid && this.state.room) {
+      void this.db.set(this.rp('players/' + this.state.uid + '/online'), false);
+      // Someone who leaves is no longer ready to start.
+      void this.db.set(this.rp('startReady/' + this.state.uid), null);
+    }
     if (this.unwatch) this.unwatch();
     this.unwatch = null;
     this.clearTimers();
@@ -882,7 +895,7 @@ export class GameController {
   private isLive() {
     const M = this.state.room?.meta;
     if (!M) return false;
-    return !!((M.curtainAt && this.now() < M.curtainAt + CURTAIN_TOTAL + 340) || M.themeGoAt || M.decoGoAt);
+    return !!((M.curtainAt && this.now() < M.curtainAt + CURTAIN_TOTAL + 340) || M.themeGoAt || M.decoGoAt || M.startGoAt);
   }
 
   onTick() {
@@ -911,7 +924,14 @@ export class GameController {
       u['meta/hb'] = now;
     }
     if (Object.keys(u).length) up(u);
-    if ((m.phase || 'lobby') === 'lobby') return;
+    if ((m.phase || 'lobby') === 'lobby') {
+      // The countdown to the bakery stops if someone presses Not yet or a new player comes in. At zero, the game starts.
+      if (m.startGoAt) {
+        if (!this.startOk(room)) up({ 'meta/startGoAt': null });
+        else if (now >= m.startGoAt) void this.startGame();
+      }
+      return;
+    }
     if (m.phase === 'theme') {
       const st = m.themeStage;
       if (st === 'suggest') {
@@ -1025,32 +1045,55 @@ export class GameController {
   setThemeAgreed(t: string) {
     if (this.amHost() && this.view().screen === 'lobby') void this.db.set(this.rp('meta/themeAgreed'), String(t || '').slice(0, 40));
   }
-  startGame() {
+  /** "Start the cake" (on) and "Not yet" (off). Backing out also stops a running countdown for everyone. */
+  setStartReady(on: boolean) {
+    if (this.view().screen !== 'lobby') return;
+    const u: Record<string, unknown> = { ['startReady/' + this.state.uid]: on ? true : null };
+    if (!on) u['meta/startGoAt'] = null;
+    void this.db.update(this.rp(), u);
+  }
+  /** Everyone still in the room has pressed Start the cake, there are enough players, and an agreed theme has been typed. */
+  private startOk(room: Room | null = this.state.room) {
+    const m = room?.meta;
+    if (!room || !m) return false;
+    const act = this.hostInfo(room).active,
+      sr = room.startReady || {};
+    return act.length >= MINP && act.every((p) => sr[p.uid]) && (m.themeMode !== 'agreed' || !!cleanTheme(m.themeAgreed || ''));
+  }
+  /** The host's "Let us take them to the bakery!": starts the countdown on every screen, once everyone is ready. */
+  goToBakery() {
     const v = this.view();
-    if (v.screen !== 'lobby' || !this.amHost() || v.players.filter((p) => p.online).length < MINP) return;
-    const t = cleanTheme(v.themeAgreed);
-    if (v.themeMode === 'agreed' && !t) return;
-    // A fresh heartbeat goes out with the start, so nobody mistakes a host who was away in the lobby for one who left.
+    if (v.screen !== 'lobby' || !this.amHost() || v.startGo != null || !this.startOk()) return;
+    // A fresh heartbeat goes out with the countdown, so nobody mistakes a host who was away in the lobby for one who left.
     this.beatAt = this.now();
-    // Clear the last cake now, while nobody can be decorating yet.
-    const freshCake = { 'meta/hb': this.beatAt, cake: null, cakeBy: null, toppings: null, strokes: null, log: null, decoReady: null };
-    if (v.themeMode === 'agreed') {
-      void this.db.update(this.rp(), freshCake);
-      this.startDecorate(t);
-      return;
-    }
-    void this.db.update(this.rp(), {
-      ...freshCake,
-      'meta/phase': 'theme',
-      'meta/themeStage': 'suggest',
-      'meta/sugDoneAt': null,
-      'meta/voteDoneAt': null,
-      'meta/themeResult': null,
-      'meta/themeGoAt': null,
-      'meta/cakeTheme': '',
-      themeSugs: null,
-      themeVotes: null,
+    void this.metaTx('go', (m) => ((m.phase || 'lobby') === 'lobby' && !m.startGoAt ? { ...m, startGoAt: this.now() + START_GO_MS, hb: this.beatAt } : undefined));
+  }
+  /** The countdown is over: the room leaves the lobby, exactly once, even if two players act as host at the same moment. */
+  private async startGame() {
+    const R = this.state.room;
+    if (!R || !R.meta || !this.amHost() || !this.startOk(R)) return;
+    this.beatAt = this.now();
+    const went = await this.metaTx('start', (m) => {
+      if ((m.phase || 'lobby') !== 'lobby' || !m.startGoAt || this.now() < m.startGoAt) return undefined;
+      const t = cleanTheme(m.themeAgreed || ''),
+        base = { ...m, startGoAt: null, hb: this.beatAt, themeResult: null, themeGoAt: null, decoGoAt: null };
+      if (m.themeMode === 'agreed') return t ? { ...base, phase: 'decorate', cakeTheme: t, themeStage: null } : undefined;
+      return { ...base, phase: 'theme', cakeTheme: '', themeStage: 'suggest', sugDoneAt: null, voteDoneAt: null };
     });
+    // Clear what the last round left only once this room has really moved on, so a host whose connection
+    // dropped and came back cannot wipe a game that another player already started.
+    if (went)
+      void this.db.update(this.rp(), {
+        cake: null,
+        cakeBy: null,
+        toppings: null,
+        strokes: null,
+        log: null,
+        decoReady: null,
+        themeSugs: null,
+        themeVotes: null,
+        startReady: null,
+      });
   }
 
   // ---- theme ----------------------------------------------------------------
@@ -1118,15 +1161,9 @@ export class GameController {
 
   // ---- decorate -------------------------------------------------------------
 
-  /** From the theme result, or straight from the lobby with the theme everyone already agreed on. */
-  private startDecorate(agreedTheme?: string) {
-    void this.metaTx('dec', (m) => {
-      if (agreedTheme != null)
-        return (m.phase || 'lobby') === 'lobby'
-          ? { ...m, phase: 'decorate', cakeTheme: agreedTheme, themeResult: null, themeStage: null, decoGoAt: null, themeGoAt: null, hb: this.beatAt || this.now() }
-          : undefined;
-      return m.phase === 'theme' && m.themeStage === 'result' ? { ...m, phase: 'decorate', decoGoAt: null, themeGoAt: null } : undefined;
-    });
+  /** From the theme result. (With a theme everyone already agreed on, startGame goes straight to decorating.) */
+  private startDecorate() {
+    void this.metaTx('dec', (m) => (m.phase === 'theme' && m.themeStage === 'result' ? { ...m, phase: 'decorate', decoGoAt: null, themeGoAt: null } : undefined));
   }
   private addLog(text: string) {
     this.db.push(this.rp('log'), { by: this.state.uid, text, at: this.now() });
@@ -1539,6 +1576,7 @@ export class GameController {
       'meta/slots': null,
       'meta/decoGoAt': null,
       'meta/themeGoAt': null,
+      'meta/startGoAt': null,
       'meta/sugDoneAt': null,
       'meta/voteDoneAt': null,
       themeSugs: null,
@@ -1553,6 +1591,7 @@ export class GameController {
       strokes: null,
       log: null,
       decoReady: null,
+      startReady: null,
       cake: null,
       cakeBy: null,
     });
